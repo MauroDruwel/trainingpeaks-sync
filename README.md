@@ -1,7 +1,7 @@
 # TrainingPeaks Multi-Source Sync (Mauro Edition) ⚡
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-165%20passed-brightgreen.svg)](#running-tests)
+[![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen.svg)](#running-tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An automated, intelligent multi-source workout aggregator and synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Seamlessly reconciles watch telemetry from [Strava](https://www.strava.com/), swimming lane reservations from **LAGO**, and university pool bookings from your **StudentApp**, complete with **OpenAI-compatible AI coaching analysis** (Ollama, LM Studio, vLLM, OpenRouter, Groq, DeepSeek, or OpenAI) and unattended **cron / daemon automation**.
@@ -52,7 +52,7 @@ When you head out for a swim, your session is tracked across 3 distinct sources:
 - 🧠 **Universal OpenAI-Compatible AI Coaching**: Connect to **ANY** OpenAI-compatible endpoint — local models (Ollama, LM Studio, vLLM, LocalAI) or cloud providers (OpenRouter, Groq, DeepSeek, OpenAI).
 - 💾 **Idempotent State Management**: Records processed workouts and reservations in `.sync_state.json`. Never duplicates activities or emails.
 - 📧 **Optional Auto-Upload to TrainingPeaks**: Emails generated `.tcx` workout files directly to your personal TrainingPeaks upload address (`username.upload@trainingpeaks.com`) via standard SMTP.
-- 🧪 **165 Automated Tests**: Comprehensive unit tests covering IMAP email parsing, HAR inspection, multi-source reconciliation, synthetic TCX formatting, AI analysis, and CLI routing.
+- 🧪 **171 Automated Tests**: Comprehensive unit tests covering IMAP email parsing, HAR inspection, multi-source reconciliation, synthetic TCX formatting, AI analysis, and CLI routing.
 
 ---
 
@@ -61,8 +61,8 @@ When you head out for a swim, your session is tracked across 3 distinct sources:
 ### 1. Install
 
 ```bash
-git clone https://github.com/MauroDruwel/strava-to-trainingpeaks.git
-cd strava-to-trainingpeaks
+git clone https://github.com/MauroDruwel/trainingpeaks-sync.git
+cd trainingpeaks-sync
 
 # Set up virtual environment
 python3 -m venv .venv
@@ -166,7 +166,7 @@ Run a sync check every hour:
 crontab -e
 
 # Add job:
-0 * * * * cd /path/to/strava-to-trainingpeaks && .venv/bin/tp-sync sync --once >> cron.log 2>&1
+0 * * * * cd /path/to/trainingpeaks-sync && .venv/bin/tp-sync sync --once >> cron.log 2>&1
 ```
 
 ### Docker Container
@@ -201,7 +201,7 @@ The AI analysis engine supports any OpenAI-compatible provider:
 ## 🏗️ Architecture
 
 ```
-strava-to-trainingpeaks/
+trainingpeaks-sync/
 ├── src/
 │   ├── config.py                 # Unified settings (Strava, Lago, StudentApp, AI, Sync)
 │   ├── models.py                 # Dataclasses (Sport, SwimReservation, FusedWorkout, ActivitySummary)

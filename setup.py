@@ -16,13 +16,13 @@ def read(file_name):
 
 
 setup(
-    name="strava-to-trainingpeaks",
+    name="trainingpeaks-sync",
     version=re.findall(
         re.compile(r'[0-9]+\.[0-9]+\.[0-9]+'),
         read('__version__.py')
     )[0],
     author="Mauro Druwel",
-    description="Automated Strava to TrainingPeaks sync tool with universal OpenAI-compatible AI analysis.",
+    description="Multi-source workout aggregator and sync engine for TrainingPeaks (Strava, LAGO, StudentApp).",
     packages=find_packages(),
     install_requires=[
         "defusedxml>=0.7.1",

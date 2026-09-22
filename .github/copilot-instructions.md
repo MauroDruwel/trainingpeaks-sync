@@ -17,16 +17,15 @@ This repository contains a Python CLI application that downloads activities from
 
 ```bash
 # Clone and setup (if starting fresh)
-git clone https://github.com/Lucs1590/strava-to-trainingpeaks
-cd strava-to-trainingpeaks
+git clone https://github.com/MauroDruwel/trainingpeaks-sync
+cd trainingpeaks-sync
 
 # Essential setup
-pip install -r requirements.txt
-pip install .
-python -m unittest discover -s tests -v
+pip install -e .
+pytest
 
 # Verify installation
-strava-to-trainingpeaks
+tp-sync --help
 ```
 
 ## Working Effectively
