@@ -2,11 +2,11 @@
 
 [![Mauro Quality Gate](https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-2ea44f?style=flat&logo=github)](https://github.com/MauroDruwel/quality-gate)
 [![CI](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen.svg)](#-running-tests)
+[![Tests](https://img.shields.io/badge/tests-176%20passed-brightgreen.svg)](#-running-tests)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/github/license/MauroDruwel/trainingpeaks-sync)](LICENSE)
 
-Multi-source workout aggregator & synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Fuses watch telemetry from **Strava**, swimming lane reservation tickets from **LAGO**, and university pool bookings from your **StudentApp** into enriched, verified TrainingPeaks activities — with **OpenAI-compatible AI coaching analysis**, automatic duration preservation during pool rest pauses, and synthetic workout generation if you forget your watch.
+Multi-source workout aggregator & synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Fuses watch telemetry from **Strava**, swimming lane reservation tickets from **LAGO**, and university pool bookings from your **StudentApp** into enriched, verified TrainingPeaks activities — with **NVIDIA NIM AI coaching powered by [NIMStats](https://nimstats.maurodruwel.be/)**, automatic duration preservation during pool rest pauses, and synthetic workout generation if you forget your watch.
 
 ---
 
@@ -37,6 +37,7 @@ When heading out for a swim, your session is captured across three distinct chan
                    ┌───────────────────────────────┐
                    │ TrainingPeaks Activity (.tcx) │
                    │ + AI Coaching Report (.md)    │
+                   │   (NVIDIA NIM via NIMStats)   │
                    │ + Optional Email Auto-Upload  │
                    └───────────────────────────────┘
 ```
@@ -53,10 +54,10 @@ When heading out for a swim, your session is captured across three distinct chan
 - ⌚ **"Forgot My Watch" Synthetic TCX**: Forgot your watch at home? The engine synthesizes a valid, TrainingPeaks-compliant TCX file with paced lap intervals from your verified reservation so your calendar never misses a workout.
 - 🔗 **Smart Multi-Source Reconciler**: Correlates sessions occurring within a configurable window ($\pm 90$ mins) and enriches activities with facility names, reservation codes, and telemetry.
 - ⏱️ **Headless & Cron-Ready**: Designed for unattended background automation via standard `crontab`, `systemd`, or built-in `--daemon` loop.
-- 🧠 **Universal OpenAI-Compatible AI Coaching**: Connect to **any** OpenAI-compatible endpoint — local models (Ollama, LM Studio, vLLM) or cloud providers (OpenRouter, Groq, DeepSeek, OpenAI).
+- 🧠 **NVIDIA NIM AI Coaching + NIMStats**: Connects to the NVIDIA NIM API (`https://integrate.api.nvidia.com/v1`) and dynamically retrieves the highest-performing LLM from **[NIMStats](https://nimstats.maurodruwel.be/)** based on benchmarked intelligence, uptime, and throughput. Also supports local models (Ollama, LM Studio) and cloud endpoints (OpenRouter, Groq, DeepSeek).
 - 💾 **Idempotent Atomic State**: Persisted safely in `.sync_state.json` to prevent duplicates across runs.
 - 📧 **Direct TrainingPeaks Upload**: Optionally emails generated `.tcx` workout files directly to your personal TrainingPeaks upload mailbox (`username.upload@trainingpeaks.com`).
-- 🧪 **171 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, and CLI handlers.
+- 🧪 **176 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, NIMStats retrieval, and CLI handlers.
 
 ---
 
@@ -71,8 +72,9 @@ The CLI tool is available as `tp-sync` (or `trainingpeaks-sync`):
 | `tp-sync lago` | Inspect recent LAGO reservation confirmations from email | `tp-sync lago --days 7` |
 | `tp-sync studentapp` | Inspect StudentApp pool bookings from HAR / API | `tp-sync studentapp --har session.har` |
 | `tp-sync status` | Inspect pipeline status, credentials, and sync history | `tp-sync status` |
+| `tp-sync nimstats` | Query top benchmarked models from Mauro's NIMStats | `tp-sync nimstats --strategy intelligence` |
 | `tp-sync auth` | Perform interactive Strava OAuth 2.0 setup | `tp-sync auth` |
-| `tp-sync analyze` | Generate AI coaching feedback for an activity | `tp-sync analyze --activity-id 123456` |
+| `tp-sync analyze` | Generate AI coaching feedback for an activity | `tp-sync analyze sample.tcx --sport Swim` |
 
 ---
 
@@ -140,11 +142,17 @@ All configuration is managed via environment variables in `.env`:
 | `SYNTHETIC_SWIM_DISTANCE_METERS`| `2000` | Default distance for synthetic swim workouts |
 | `SYNTHETIC_SWIM_DURATION_MINS` | `105` | Default duration (1h 45m) for swim workouts |
 | `MATCH_WINDOW_MINUTES` | `90` | Correlation time window between watch & reservation |
-| **OpenAI-Compatible AI Coaching** | | |
-| `AI_COACHING_ENABLED` | `false` | Enable automated post-workout AI analysis |
-| `AI_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible endpoint URL |
-| `AI_MODEL` | `llama3.2` | Model identifier |
-| `AI_API_KEY` | `ollama` | API key (or provider token) |
+| **AI Coaching (NVIDIA NIM & NIMStats)** | | |
+| `AI_ENABLED` | `true` | Enable automated post-workout AI coaching analysis |
+| `AI_PROVIDER` | `nvidia` | AI provider (`nvidia`, `ollama`, `openrouter`, `openai`) |
+| `NVIDIA_API_KEY` | — | NVIDIA NIM API key (from https://build.nvidia.com/) |
+| `NIMSTATS_ENABLED` | `true` | Enable dynamic model retrieval via NIMStats API |
+| `NIMSTATS_STRATEGY`| `intelligence` | Strategy: `intelligence` (best coach), `balanced`, `speed` |
+| `NIMSTATS_URL` | `https://nimstats.maurodruwel.be` | NIMStats API base URL |
+| `AI_BASE_URL` | `https://integrate.api.nvidia.com/v1` | OpenAI-compatible endpoint URL (defaults to NVIDIA NIM) |
+| `AI_MODEL` | `auto` | Model name or `auto` for live NIMStats selection |
+| `AI_LANGUAGE` | `English` | Coaching report language |
+| `AI_TEMPERATURE` | `0.3` | Model temperature |
 | **TrainingPeaks Output** | | |
 | `ACTIVITIES_OUTPUT_DIR` | `./synced_activities` | Local directory for exported `.tcx` files |
 | `SYNC_STATE_FILE` | `.sync_state.json` | Path to persistent sync state file |
@@ -156,18 +164,57 @@ All configuration is managed via environment variables in `.env`:
 
 ---
 
-## 🤖 OpenAI-Compatible AI Coaching
+## 🤖 AI Coaching & NIMStats Integration
 
-The analysis engine works with **any** OpenAI-compatible API:
+The coaching analysis engine integrates directly with **[Mauro Druwel's NIMStats](https://nimstats.maurodruwel.be/)** and the **[NVIDIA NIM API](https://integrate.api.nvidia.com/v1)**.
 
-| Provider | `AI_BASE_URL` | `AI_MODEL` | `AI_API_KEY` |
-| :--- | :--- | :--- | :--- |
-| **Local Ollama** | `http://localhost:11434/v1` | `llama3.2` | `ollama` |
-| **Local LM Studio** | `http://localhost:1234/v1` | `local-model` | `lm-studio` |
-| **OpenRouter** | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.2-3b-instruct` | `sk-or-v1-...` |
-| **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` | `sk-...` |
-| **Groq** | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | `gsk_...` |
-| **OpenAI** | *(standard)* | `gpt-4o-mini` | `sk-proj-...` |
+When set to `auto` (default), the engine queries the live NIMStats API for the highest-performing model evaluated on real benchmarks:
+
+```
+┌─────────────────────────────────┐
+│ https://nimstats.maurodruwel.be │
+│ /top/intelligence.json          │
+└────────────────┬────────────────┘
+                 │ Dynamic best model retrieval
+                 ▼
+┌─────────────────────────────────┐
+│      NVIDIA NIM API             │
+│ integrate.api.nvidia.com/v1     │
+│ (deepseek-v4.1-flash / nemotron)│
+└────────────────┬────────────────┘
+                 │ Performance breakdown & physiological insights
+                 ▼
+┌─────────────────────────────────┐
+│     AI Coaching Report (.md)    │
+│  • Pacing Execution             │
+│  • Fatigue Trends               │
+│  • Actionable Next-Step Advice  │
+└─────────────────────────────────┘
+```
+
+### Supported Providers
+
+| Provider | `AI_BASE_URL` | `AI_MODEL` | `AI_API_KEY` | Dynamic NIMStats |
+| :--- | :--- | :--- | :--- | :--- |
+| **NVIDIA NIM (Flagship)** | `https://integrate.api.nvidia.com/v1` | `auto` | `nvapi-...` | **✅ Yes (Active)** |
+| **Local Ollama** | `http://localhost:11434/v1` | `llama3.2` | `ollama` | ⚪ Optional |
+| **Local LM Studio** | `http://localhost:1234/v1` | `local-model` | `lm-studio` | ⚪ Optional |
+| **OpenRouter** | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.2-3b-instruct` | `sk-or-v1-...` | ⚪ Optional |
+| **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` | `sk-...` | ⚪ Optional |
+| **Groq** | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | `gsk_...` | ⚪ Optional |
+| **OpenAI** | *(standard)* | `gpt-4o-mini` | `sk-proj-...` | ⚪ Optional |
+
+### Live NIMStats Inspection
+
+Inspect live model leaderboards from the command line:
+
+```bash
+# Query all strategy leaders (Intelligence, Balanced, Speed)
+tp-sync nimstats
+
+# Query top intelligence model
+tp-sync nimstats --strategy intelligence
+```
 
 ---
 
@@ -217,7 +264,7 @@ pytest --cov=src --cov-report=term-missing
 
 This project strictly adheres to the **[Mauro Quality Gate (MQG)](https://github.com/MauroDruwel/quality-gate)**:
 - **Zero-Warning Strictness**: Clean linting and formatting via `ruff`.
-- **Automated Testing**: 171 unit and integration tests across data ingestion, TCX generation, and multi-source reconciliation.
+- **Automated Testing**: 176 unit and integration tests across data ingestion, TCX generation, NIMStats retrieval, and multi-source reconciliation.
 - **Atomic State**: Synchronization state is persisted atomically in `.sync_state.json` to prevent partial writes.
 - **Secret Hygiene**: Sensitive credentials remain strictly inside `.env` (gitignored).
 
@@ -226,7 +273,7 @@ trainingpeaks-sync/
 ├── src/
 │   ├── config.py                 # Unified configuration settings
 │   ├── models.py                 # Core domain models (Sport, SwimReservation, FusedWorkout)
-│   ├── cli.py                    # CLI entrypoint (sync, lago, studentapp, status, auth)
+│   ├── cli.py                    # CLI entrypoint (sync, lago, studentapp, status, auth, nimstats)
 │   ├── sources/                  # Data ingestion providers
 │   │   ├── strava.py             # Strava REST API & OAuth token refresh
 │   │   ├── lago.py               # LAGO email parser & IMAP client
@@ -238,15 +285,16 @@ trainingpeaks-sync/
 │   │   ├── builder.py            # Stream to TCX converter
 │   │   ├── formatter.py          # TrainingPeaks swim XML fixup & slot duration extension
 │   │   └── processor.py          # Trackpoint cleaning & Euclidean reduction
-│   ├── ai/                       # Universal OpenAI-compatible AI coaching
+│   ├── ai/                       # Universal AI coaching & NIMStats integration
 │   │   ├── analyzer.py           # Training analysis generator
+│   │   ├── nimstats.py           # NIMStats client & model resolver (nimstats.maurodruwel.be)
 │   │   └── tts.py                # Optional speech synthesis
 │   └── sync/                     # Automation engine
 │       ├── engine.py             # Multi-source orchestrator
 │       ├── state.py              # Atomic JSON state persistence (.sync_state.json)
 │       ├── scheduler.py          # Cron & daemon loops
 │       └── email.py              # TrainingPeaks SMTP uploader
-├── tests/                        # 171 comprehensive unit tests
+├── tests/                        # 176 comprehensive unit tests
 ├── pyproject.toml                # Modern Python packaging & tool configuration
 ├── Dockerfile                    # Background daemon container
 ├── Makefile                      # Developer targets (make test, make sync)

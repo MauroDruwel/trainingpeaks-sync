@@ -128,3 +128,16 @@ class TestCLI(unittest.TestCase):
              patch("builtins.print"):
             exit_code = main(["studentapp"])
             self.assertEqual(exit_code, 0)
+
+    def test_cmd_nimstats(self):
+        fake_info = MagicMock()
+        fake_info.score = 65.0
+        fake_info.intelligence = 40.0
+        fake_info.uptime = 99.5
+        fake_info.avg_response_time_ms = 12000.0
+        fake_info.avg_throughput_tps = 45.0
+
+        with patch("src.ai.nimstats.NIMStatsClient.get_best_model", return_value=("deepseek-ai/deepseek-v4.1-flash", fake_info)), \
+             patch("builtins.print"):
+            exit_code = main(["nimstats", "--strategy", "intelligence"])
+            self.assertEqual(exit_code, 0)

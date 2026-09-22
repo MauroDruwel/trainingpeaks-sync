@@ -89,24 +89,58 @@ class FusionConfig:
 
 @dataclass
 class AIConfig:
-    """OpenAI-compatible AI configuration (supports Ollama, vLLM, OpenRouter, Groq, DeepSeek, etc.)."""
+    """OpenAI-compatible AI configuration (supports NVIDIA NIM, Ollama, vLLM, OpenRouter, Groq, DeepSeek, etc.)."""
     enabled: bool = False
+    provider: Optional[str] = None  # "nvidia", "ollama", "openai", "openrouter", etc.
     base_url: Optional[str] = None
     api_key: Optional[str] = None
-    model: str = "gpt-4o-mini"
+    nvidia_api_key: Optional[str] = None
+    model: str = "auto"
     language: str = "English"
     temperature: float = 0.3
     tts_enabled: bool = False
     tts_model: str = "gpt-4o-mini-tts"
     tts_voice: str = "alloy"
 
+    # NIMStats dynamic model selection (from https://nimstats.maurodruwel.be/)
+    nimstats_enabled: bool = True
+    nimstats_strategy: str = "intelligence"  # "intelligence", "balanced", "speed"
+    nimstats_url: str = "https://nimstats.maurodruwel.be"
+
+    @property
+    def is_nvidia_nim(self) -> bool:
+        """Check if target endpoint is NVIDIA NIM API."""
+        base = self.effective_base_url or ""
+        return (
+            "api.nvidia.com" in base
+            or self.provider == "nvidia"
+            or bool(self.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY"))
+        )
+
+    @property
+    def effective_base_url(self) -> Optional[str]:
+        """Return the effective base URL."""
+        if self.base_url:
+            return self.base_url
+        if self.provider == "nvidia" or self.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY"):
+            return "https://integrate.api.nvidia.com/v1"
+        return None
+
     @property
     def effective_api_key(self) -> str:
         """Return effective API key, defaulting to dummy for local endpoints if needed."""
         if self.api_key:
             return self.api_key
-        # For local endpoints like Ollama or LM Studio, API key isn't strictly required
-        if self.base_url and ("localhost" in self.base_url or "127.0.0.1" in self.base_url):
+        if self.nvidia_api_key:
+            return self.nvidia_api_key
+        env_nvidia = os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY")
+        if env_nvidia:
+            return env_nvidia
+        env_ai = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if env_ai:
+            return env_ai
+        base = self.effective_base_url
+        if base and ("localhost" in base or "127.0.0.1" in base):
             return "dummy-local-key"
         return ""
 
@@ -249,15 +283,45 @@ class AppConfig:
             auto_generate_synthetic_if_watch_forgotten=synthetic_enabled,
         )
 
-        # 5. AI (OpenAI or custom compatible endpoint like Ollama, OpenRouter, Groq, vLLM)
-        ai_base_url = os.getenv("AI_BASE_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
-        ai_api_key = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        ai_model = os.getenv("AI_MODEL") or os.getenv("OPENAI_MODEL") or ("llama3.2" if ai_base_url and "localhost" in ai_base_url else "gpt-4o-mini")
+        # 5. AI (NVIDIA NIM, Ollama, OpenRouter, Groq, DeepSeek, or standard OpenAI)
+        nvidia_key = os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY")
+        ai_provider = os.getenv("AI_PROVIDER")
+        if not ai_provider and nvidia_key:
+            ai_provider = "nvidia"
+
+        ai_base_url = (
+            os.getenv("AI_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+            or os.getenv("OPENAI_API_BASE")
+            or ("https://integrate.api.nvidia.com/v1" if ai_provider == "nvidia" or nvidia_key else None)
+        )
+        ai_api_key = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY") or nvidia_key
+
+        nimstats_enabled_env = os.getenv("NIMSTATS_ENABLED")
+        nimstats_enabled = (
+            nimstats_enabled_env.lower() in ("true", "1", "yes")
+            if nimstats_enabled_env is not None
+            else True
+        )
+        nimstats_strategy = os.getenv("NIMSTATS_STRATEGY", "intelligence")
+        nimstats_url = os.getenv("NIMSTATS_URL", "https://nimstats.maurodruwel.be")
+
+        ai_model_env = os.getenv("AI_MODEL") or os.getenv("OPENAI_MODEL")
+        if not ai_model_env:
+            if ai_provider == "nvidia" or nvidia_key or (ai_base_url and "api.nvidia.com" in ai_base_url):
+                ai_model = "auto"
+            elif ai_base_url and "localhost" in ai_base_url:
+                ai_model = "llama3.2"
+            else:
+                ai_model = "auto" if nimstats_enabled else "gpt-4o-mini"
+        else:
+            ai_model = ai_model_env
+
         ai_enabled_env = os.getenv("AI_ENABLED")
         ai_enabled = (
             ai_enabled_env.lower() in ("true", "1", "yes")
             if ai_enabled_env is not None
-            else bool(ai_api_key or ai_base_url)
+            else bool(ai_api_key or ai_base_url or nvidia_key)
         )
 
         ai_lang = os.getenv("AI_LANGUAGE", "English")
@@ -271,14 +335,19 @@ class AppConfig:
 
         ai = AIConfig(
             enabled=ai_enabled,
+            provider=ai_provider,
             base_url=ai_base_url,
             api_key=ai_api_key,
+            nvidia_api_key=nvidia_key,
             model=ai_model,
             language=ai_lang,
             temperature=ai_temp,
             tts_enabled=tts_enabled,
             tts_model=os.getenv("AI_TTS_MODEL", "gpt-4o-mini-tts"),
             tts_voice=os.getenv("AI_TTS_VOICE", "alloy"),
+            nimstats_enabled=nimstats_enabled,
+            nimstats_strategy=nimstats_strategy,
+            nimstats_url=nimstats_url,
         )
 
         # 6. Sync / Cron

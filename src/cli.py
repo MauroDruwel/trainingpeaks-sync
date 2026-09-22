@@ -170,6 +170,27 @@ def create_parser() -> argparse.ArgumentParser:
     # --- Coach command ---
     subparsers.add_parser("coach", help="Start multi-athlete coach mode")
 
+    # --- NIMStats command ---
+    nim_parser = subparsers.add_parser("nimstats", help="Inspect top LLMs from Mauro's NIMStats (nimstats.maurodruwel.be)")
+    nim_parser.add_argument(
+        "--strategy",
+        type=str,
+        choices=["all", "intelligence", "balanced", "speed"],
+        default="all",
+        help="Strategy to inspect (default: all)",
+    )
+    nim_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force fresh lookup bypassing local cache",
+    )
+    nim_parser.add_argument(
+        "--url",
+        type=str,
+        default=None,
+        help="Override NIMStats API base URL",
+    )
+
     return parser
 
 
@@ -355,11 +376,30 @@ def cmd_status(config: AppConfig) -> int:
     print(f"  • Matching time window: ±{config.fusion.time_window_minutes} mins")
 
     # 5. AI Configuration
-    print("\n[5. AI Coaching Analysis (OpenAI-Compatible)]")
+    is_nim = config.ai.is_nvidia_nim
+    provider_name = "NVIDIA NIM" if is_nim else (config.ai.provider or "OpenAI-Compatible")
+    print(f"\n[5. AI Coaching Analysis ({provider_name})]")
     print(f"  • Enabled: {'✅ Yes' if config.ai.enabled else '⚪ No'}")
     if config.ai.enabled:
-        print(f"  • Endpoint: {config.ai.base_url or 'Default OpenAI API'}")
-        print(f"  • Model: {config.ai.model}")
+        print(f"  • Endpoint: {config.ai.effective_base_url or 'Default OpenAI API'}")
+        if is_nim:
+            print(f"  • NVIDIA NIM API Key: {'✅ Configured' if config.ai.effective_api_key else '⚪ Not configured'}")
+        if config.ai.nimstats_enabled:
+            print(f"  • NIMStats Dynamic Selection: ✅ Active ({config.ai.nimstats_url})")
+            print(f"  • Strategy: {config.ai.nimstats_strategy}")
+            try:
+                from .ai.nimstats import get_nimstats_client
+                client = get_nimstats_client(base_url=config.ai.nimstats_url)
+                best_m, info = client.get_best_model(strategy=config.ai.nimstats_strategy, timeout=3.0)
+                if info:
+                    intel_str = f", Intel: {info.intelligence}" if info.intelligence is not None else ""
+                    print(f"  • Top Resolved Model: {best_m} (Score: {info.score:.0f}{intel_str}, Uptime: {info.uptime:.1f}%)")
+                else:
+                    print(f"  • Top Resolved Model: {best_m} (Fallback)")
+            except Exception as err:
+                print(f"  • Top Resolved Model: ⚪ {err}")
+        else:
+            print(f"  • Model: {config.ai.model}")
         print(f"  • Language: {config.ai.language}")
         print(f"  • Speech (TTS): {'Enabled' if config.ai.tts_enabled else 'Disabled'}")
 
@@ -376,6 +416,43 @@ def cmd_status(config: AppConfig) -> int:
         print("  • Email Direct Upload: ⚪ Not configured (manual file drop or set TP_EMAIL & SMTP_*)")
 
     print("\n" + "=" * 60 + "\n")
+    return 0
+
+
+def cmd_nimstats(args: argparse.Namespace, config: AppConfig) -> int:
+    """Query and display live model leaderboards from Mauro's NIMStats."""
+    from .ai.nimstats import get_nimstats_client
+    print("\n📊 NIMStats Model Leaderboard (https://nimstats.maurodruwel.be)")
+    print("-" * 65)
+
+    client = get_nimstats_client(base_url=args.url or config.ai.nimstats_url)
+    strategies = ["intelligence", "balanced", "speed"] if args.strategy == "all" else [args.strategy]
+
+    icons = {
+        "intelligence": "🧠",
+        "balanced": "⚖️",
+        "speed": "⚡",
+    }
+
+    for strat in strategies:
+        icon = icons.get(strat, "🤖")
+        model, info = client.get_best_model(strategy=strat, timeout=5.0, force_refresh=args.refresh)
+        if info:
+            print(f"{icon} {strat.capitalize():<13}: {model}")
+            metrics = [f"Score: {info.score:.0f}"]
+            if info.intelligence is not None:
+                metrics.append(f"Intel: {info.intelligence}")
+            if info.uptime is not None:
+                metrics.append(f"Uptime: {info.uptime:.1f}%")
+            if info.avg_response_time_ms is not None:
+                metrics.append(f"Latency: {info.avg_response_time_ms:.0f}ms")
+            if info.avg_throughput_tps is not None:
+                metrics.append(f"TPS: {info.avg_throughput_tps:.1f}")
+            print(f"   └─ {', '.join(metrics)}")
+        else:
+            print(f"{icon} {strat.capitalize():<13}: {model} (Fallback)")
+
+    print("-" * 65 + "\n")
     return 0
 
 
@@ -398,7 +475,11 @@ def cmd_analyze(args: argparse.Namespace, config: AppConfig) -> int:
     )
 
     analyzer = AIAnalyzer(config.ai)
-    print(f"🤖 Analyzing {tcx_path.name} ({sport.value}) using model '{config.ai.model}'...")
+    model_name, nim_info = analyzer.resolve_model()
+    if nim_info:
+        print(f"🤖 Analyzing {tcx_path.name} ({sport.value}) using top NIMStats model '{model_name}' (Intel: {nim_info.intelligence})...")
+    else:
+        print(f"🤖 Analyzing {tcx_path.name} ({sport.value}) using model '{model_name}'...")
 
     try:
         report = analyzer.analyze(tcx_data, sport, analysis_config)
@@ -445,6 +526,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_auth(args, config)
     elif args.command == "status":
         return cmd_status(config)
+    elif args.command == "nimstats":
+        return cmd_nimstats(args, config)
     elif args.command == "analyze":
         return cmd_analyze(args, config)
     elif args.command == "interactive":

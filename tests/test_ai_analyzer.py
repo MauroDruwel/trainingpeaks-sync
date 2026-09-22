@@ -118,3 +118,73 @@ Multiple newlines.
             result = tts.generate_audio_summary("Great training session today!", output_file)
             self.assertEqual(result, output_file)
             mock_speech_response.stream_to_file.assert_called_once()
+
+    def test_nimstats_client_get_best_model_success(self):
+        import json
+        from src.ai.nimstats import NIMStatsClient
+        client = NIMStatsClient(base_url="https://nimstats.maurodruwel.be")
+
+        fake_json = {
+            "best_model": "deepseek-ai/deepseek-v4.1-flash",
+            "provider": "deepseek-ai",
+            "score": 58,
+            "intelligence": 39.5,
+            "uptime": 100.0,
+            "avg_response_time_ms": 60409.7,
+            "avg_throughput_tps": 14.3,
+            "generated_at": "2026-09-22T20:10:03Z",
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(fake_json).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            model, info = client.get_best_model(strategy="intelligence", force_refresh=True)
+            self.assertEqual(model, "deepseek-ai/deepseek-v4.1-flash")
+            self.assertIsNotNone(info)
+            self.assertEqual(info.score, 58.0)
+            self.assertEqual(info.intelligence, 39.5)
+
+    def test_nimstats_client_fallback_on_network_error(self):
+        from src.ai.nimstats import NIMStatsClient
+        client = NIMStatsClient()
+
+        with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
+            model, info = client.get_best_model(strategy="speed", force_refresh=True)
+            self.assertEqual(model, "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
+            self.assertIsNone(info)
+
+    def test_ai_analyzer_resolves_nimstats_model(self):
+        config = AIConfig(
+            provider="nvidia",
+            nvidia_api_key="nvapi-test",
+            model="auto",
+            nimstats_enabled=True,
+            nimstats_strategy="intelligence"
+        )
+        analyzer = AIAnalyzer(config)
+
+        fake_info = MagicMock()
+        fake_info.best_model = "deepseek-ai/deepseek-v4.1-flash"
+        fake_info.strategy = "intelligence"
+        fake_info.score = 58
+        fake_info.intelligence = 39.5
+        fake_info.uptime = 100.0
+
+        with patch("src.ai.analyzer.get_nimstats_client") as mock_get_client:
+            mock_client_inst = mock_get_client.return_value
+            mock_client_inst.get_best_model.return_value = ("deepseek-ai/deepseek-v4.1-flash", fake_info)
+
+            resolved_model, info = analyzer.resolve_model()
+            self.assertEqual(resolved_model, "deepseek-ai/deepseek-v4.1-flash")
+            self.assertEqual(info.intelligence, 39.5)
+
+    def test_ai_config_nvidia_nim_properties(self):
+        config = AIConfig(
+            provider="nvidia",
+            nvidia_api_key="nvapi-abc-123",
+        )
+        self.assertTrue(config.is_nvidia_nim)
+        self.assertEqual(config.effective_base_url, "https://integrate.api.nvidia.com/v1")
+        self.assertEqual(config.effective_api_key, "nvapi-abc-123")
