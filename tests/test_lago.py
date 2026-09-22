@@ -152,8 +152,51 @@ ET
         self.assertEqual(reservation.start_time.date(), date(2026, 9, 22))
         self.assertEqual(reservation.start_time.hour, 8)
         self.assertEqual(reservation.start_time.minute, 30)
-        self.assertEqual(reservation.duration_seconds, 3600)
+        self.assertEqual(reservation.duration_seconds, 6300)  # 1h 45m default
         self.assertEqual(reservation.raw_details.get("barcode"), "89209761305197092000")
+
+    def test_parse_e_tickets_pdf_attachment(self):
+        import zlib
+        msg = EmailMessage()
+        msg["Subject"] = "Fwd: Dank je wel voor je aankoop!"
+        msg["From"] = "Mauro Druwel <mauro.druwel@gmail.com>"
+        msg["To"] = "swimming@maurodruwel.be"
+        msg.set_content("LAGO tickets")
+
+        stream_content = b"""
+BT
+/FAAAAJ 9 Tf
+[(LAGO Kortrijk Weide, Nelson Mandelaplein 19, 8500 Kortrijk)] TJ
+ET
+BT
+/FAAABE 9 Tf
+[(Aankomst tussen:)] TJ
+[(21-9-2026 15:00:00 t.e.m. 21-9-2026 15:30:00)] TJ
+ET
+BT
+/FAAABE 9 Tf
+[(Ticket:)] TJ
+[(LG5276990461398344)] TJ
+ET
+"""
+        compressed = zlib.compress(stream_content)
+        pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Length 100 >>\nstream\r\n" + compressed + b"\r\nendstream\nendobj\n%%EOF"
+
+        msg.add_attachment(
+            pdf_bytes,
+            maintype="application",
+            subtype="pdf",
+            filename="E-tickets.pdf"
+        )
+
+        reservation = LagoEmailParser.parse_email_message(msg)
+        self.assertIsNotNone(reservation)
+        self.assertEqual(reservation.reservation_id, "LG5276990461398344")
+        self.assertEqual(reservation.facility, "LAGO Kortrijk Weide")
+        self.assertEqual(reservation.start_time.date(), date(2026, 9, 21))
+        self.assertEqual(reservation.start_time.hour, 15)
+        self.assertEqual(reservation.start_time.minute, 0)
+        self.assertEqual(reservation.duration_seconds, 6300)
 
 
 class TestLagoIMAPClient(unittest.TestCase):

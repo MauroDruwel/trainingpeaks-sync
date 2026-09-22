@@ -58,6 +58,7 @@ class TestWorkoutReconciler(unittest.TestCase):
         self.assertIn("lago", w.sources)
         self.assertIn("studentapp", w.sources)
         self.assertEqual(w.distance_meters, 2500)
+        self.assertEqual(w.duration_seconds, 3600)  # Strava recorded duration takes precedence!
         self.assertIn("LAGO-100", w.description)
         self.assertIn("STUD-200", w.description)
 

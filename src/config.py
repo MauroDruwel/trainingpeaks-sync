@@ -83,7 +83,7 @@ class FusionConfig:
     """Settings for multi-source workout reconciliation & synthetic activity generation."""
     time_window_minutes: int = 90
     synthetic_swim_distance_meters: float = 2000.0
-    synthetic_swim_duration_seconds: int = 3600
+    synthetic_swim_duration_seconds: int = 6300  # 1h 45m (105 mins)
     auto_generate_synthetic_if_watch_forgotten: bool = True
 
 
@@ -234,11 +234,11 @@ class AppConfig:
         except ValueError:
             fusion_dist = 2000.0
 
-        fusion_dur_raw = os.getenv("SWIM_DEFAULT_DURATION_MINUTES", "60")
+        fusion_dur_raw = os.getenv("SWIM_DEFAULT_DURATION_MINUTES", "105")
         try:
             fusion_dur = int(fusion_dur_raw) * 60
         except ValueError:
-            fusion_dur = 3600
+            fusion_dur = 6300
 
         synthetic_enabled = os.getenv("FUSION_AUTO_SYNTHETIC", "true").lower() in ("true", "1", "yes")
 

@@ -171,17 +171,29 @@ class LagoEmailParser:
             return None
 
         # 1. Extract Date and Start Time
-        # Check specific LAGO date/time string: e.g. "Datum zwembeurt: 21-9-2026 15:00:00"
+        # Supports both:
+        # - Reserveringsbewijs.pdf: "Datum zwembeurt: 21-9-2026 15:00:00"
+        # - E-tickets.pdf: "Aankomst tussen: 21-9-2026 15:00:00" or "te rekenen vanaf 21-9-2026 15:00:00"
         dt_match = re.search(
-            r"Datum\s+zwembeurt\s*:\s*([0-3]?[0-9])[/\-.]([0-1]?[0-9])[/\-.](202[0-9])\s+([0-2]?[0-9]):([0-5][0-9])",
+            r"(?:Datum\s+zwembeurt|Aankomst(?:\s+tussen)?|rekenen\s+vanaf)\s*:\s*([0-3]?[0-9])[/\-.]([0-1]?[0-9])[/\-.](202[0-9])\s+([0-2]?[0-9]):([0-5][0-9])",
             full_text,
             re.IGNORECASE,
         )
+        if not dt_match:
+            dt_match = re.search(
+                r"(?:rekenen\s+vanaf|vanaf)\s+([0-3]?[0-9])[/\-.]([0-1]?[0-9])[/\-.](202[0-9])\s+([0-2]?[0-9]):([0-5][0-9])",
+                full_text,
+                re.IGNORECASE,
+            )
+
+        # Default swim workout duration is 1h 45mins (105 mins / 6300s) unless Strava telemetry is recorded
+        DEFAULT_SWIM_DURATION_SEC = 6300
+
         if dt_match:
             day, month, year = int(dt_match.group(1)), int(dt_match.group(2)), int(dt_match.group(3))
             hour, minute = int(dt_match.group(4)), int(dt_match.group(5))
             start_dt = datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
-            duration_sec = 3600
+            duration_sec = DEFAULT_SWIM_DURATION_SEC
             end_dt = start_dt + timedelta(seconds=duration_sec)
         else:
             session_date = cls._extract_date(full_text)
@@ -198,12 +210,12 @@ class LagoEmailParser:
 
             start_time_val, end_time_val = cls._extract_time_slot(full_text)
             start_dt = datetime.combine(session_date, start_time_val).replace(tzinfo=timezone.utc)
-            end_dt = (
-                datetime.combine(session_date, end_time_val).replace(tzinfo=timezone.utc)
-                if end_time_val
-                else start_dt + timedelta(seconds=3600)
-            )
-            duration_sec = int((end_dt - start_dt).total_seconds()) if end_dt else 3600
+            if end_time_val:
+                end_dt = datetime.combine(session_date, end_time_val).replace(tzinfo=timezone.utc)
+                duration_sec = int((end_dt - start_dt).total_seconds())
+            else:
+                duration_sec = DEFAULT_SWIM_DURATION_SEC
+                end_dt = start_dt + timedelta(seconds=duration_sec)
 
         # 2. Extract Reservation Reference
         res_id = cls._extract_reservation_id(full_text)
@@ -305,6 +317,8 @@ class LagoEmailParser:
         """Extract reservation reference or ticket number."""
         patterns = [
             r"Reservatienummer\s*:\s*([0-9A-Za-z]+)",
+            r"Ticket\s*:\s*([0-9A-Za-z]{6,})",
+            r"AankoopID\s*:\s*([0-9A-Za-z]{6,})",
             r"(?:reservatienummer|ticketnummer|boekingsnummer|referentie|booking(?:\s*id)?)\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9\-]+)",
             r"(?:ticket|reservatie|boeking)\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9\-]+)",
             r"(?:ticket|reservatie|booking)\s+#([A-Za-z0-9][A-Za-z0-9\-]+)",

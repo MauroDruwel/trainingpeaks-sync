@@ -13,7 +13,7 @@ def generate_synthetic_swim_tcx(
     workout: Optional[FusedWorkout] = None,
     reservation: Optional[SwimReservation] = None,
     distance_meters: float = 2000.0,
-    duration_seconds: int = 3600,
+    duration_seconds: int = 6300,  # 1h 45m
     facility_name: str = "Pool",
 ) -> str:
     """
