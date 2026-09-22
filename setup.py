@@ -22,7 +22,7 @@ setup(
         read('__version__.py')
     )[0],
     author="Mauro Druwel",
-    description="Multi-source workout aggregator and sync engine for TrainingPeaks (Strava, LAGO, StudentApp).",
+    description="Multi-source workout aggregator & sync engine for TrainingPeaks (Strava, LAGO & StudentApp)",
     packages=find_packages(),
     install_requires=[
         "defusedxml>=0.7.1",

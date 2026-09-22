@@ -1,16 +1,18 @@
-# TrainingPeaks Multi-Source Sync (Mauro Edition) ⚡
+# TrainingPeaks Sync
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen.svg)](#running-tests)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Mauro Quality Gate](https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-2ea44f?style=flat&logo=github)](https://github.com/MauroDruwel/quality-gate)
+[![CI](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen.svg)](#-running-tests)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/github/license/MauroDruwel/trainingpeaks-sync)](LICENSE)
 
-An automated, intelligent multi-source workout aggregator and synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Seamlessly reconciles watch telemetry from [Strava](https://www.strava.com/), swimming lane reservations from **LAGO**, and university pool bookings from your **StudentApp**, complete with **OpenAI-compatible AI coaching analysis** (Ollama, LM Studio, vLLM, OpenRouter, Groq, DeepSeek, or OpenAI) and unattended **cron / daemon automation**.
+Multi-source workout aggregator & synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Fuses watch telemetry from **Strava**, swimming lane reservation tickets from **LAGO**, and university pool bookings from your **StudentApp** into enriched, verified TrainingPeaks activities — with **OpenAI-compatible AI coaching analysis**, automatic duration preservation during pool rest pauses, and synthetic workout generation if you forget your watch.
 
 ---
 
-## 🌊 The Three Synchronized Sources
+## 🌊 How It Works (The 3 Synchronized Sources)
 
-When you head out for a swim, your session is tracked across 3 distinct sources:
+When heading out for a swim, your session is captured across three distinct channels:
 
 ```
                   ┌───────────────────────────────┐
@@ -25,8 +27,9 @@ When you head out for a swim, your session is tracked across 3 distinct sources:
 └─────────────────────────────┘   │   └─────────────────────────────┘
                                   ▼
                    ┌───────────────────────────────┐
-                   │   Workout Fusion Engine       │
+                   │     Workout Fusion Engine     │
                    │   • Time Correlation (±90m)   │
+                   │   • Full Slot Duration Lock   │
                    │   • Watch Forgotten? Synthetic│
                    └───────────────┬───────────────┘
                                   │
@@ -38,154 +41,124 @@ When you head out for a swim, your session is tracked across 3 distinct sources:
                    └───────────────────────────────┘
 ```
 
-1. **Watch Telemetry (Strava)**: Captures distance, lap splits, stroke count, heart rate, and GPS/pool trackpoints.
-2. **LAGO Swimming Reservation**: Scans confirmation emails received at `swimming@maurodruwel.be` (fetched from your `sports@maurodruwel.be` IMAP account) to verify pool facility (e.g. LAGO Gent Rozebroeken, Kortrijk Weide) and booked time slot.
-3. **StudentApp Pool Booking**: Parses `.har` session exports or queries the student sports API directly to verify student pool sessions (e.g. GUSB Gent).
+1. **Watch Telemetry (Strava)**: Captures split times, distance, stroke cadence, heart rate, and indoor pool laps.
+2. **LAGO Swimming Reservation**: Scans confirmation emails & PDF e-tickets (`Reserveringsbewijs.pdf` / `E-tickets.pdf`) sent to `swimming@maurodruwel.be` via IMAP to verify facility (e.g. LAGO Kortrijk Weide, Rozebroeken) and booked time slot.
+3. **StudentApp Pool Booking**: Parses `.har` network exports or connects to the student sports API to verify campus pool reservations (e.g. GUSB Gent).
 
 ---
 
-## 💡 Key Features & "Mauro Quality Gate"
+## ✨ Features
 
-- ⌚ **"Forgot My Watch" Synthetic TCX Generation**: Forgot to wear or start your watch at the pool? No problem! The reconciler automatically generates a valid TrainingPeaks-compatible TCX file from your verified LAGO / StudentApp reservation so your training calendar is never incomplete.
-- 🔗 **Smart Session Reconciliation**: Correlates sessions occurring within a configurable time window (default: ±90 minutes). Fuses watch telemetry with reservation codes into a single enriched TrainingPeaks activity.
-- ⏱️ **Runs Like a Cronjob**: Fully headless, non-interactive execution. Run via standard `crontab`, `systemd`, or the built-in `--daemon` loop.
-- 🧠 **Universal OpenAI-Compatible AI Coaching**: Connect to **ANY** OpenAI-compatible endpoint — local models (Ollama, LM Studio, vLLM, LocalAI) or cloud providers (OpenRouter, Groq, DeepSeek, OpenAI).
-- 💾 **Idempotent State Management**: Records processed workouts and reservations in `.sync_state.json`. Never duplicates activities or emails.
-- 📧 **Optional Auto-Upload to TrainingPeaks**: Emails generated `.tcx` workout files directly to your personal TrainingPeaks upload address (`username.upload@trainingpeaks.com`) via standard SMTP.
-- 🧪 **171 Automated Tests**: Comprehensive unit tests covering IMAP email parsing, HAR inspection, multi-source reconciliation, synthetic TCX formatting, AI analysis, and CLI routing.
+- 🏊 **Full Slot Duration Preservation**: Resting at the pool wall or auto-pauses in Strava won't truncate your workout. Automatically expands the session to your booked slot (e.g. 105 mins / 1h 45m) in both metadata and TCX trackpoints.
+- ⌚ **"Forgot My Watch" Synthetic TCX**: Forgot your watch at home? The engine synthesizes a valid, TrainingPeaks-compliant TCX file with paced lap intervals from your verified reservation so your calendar never misses a workout.
+- 🔗 **Smart Multi-Source Reconciler**: Correlates sessions occurring within a configurable window ($\pm 90$ mins) and enriches activities with facility names, reservation codes, and telemetry.
+- ⏱️ **Headless & Cron-Ready**: Designed for unattended background automation via standard `crontab`, `systemd`, or built-in `--daemon` loop.
+- 🧠 **Universal OpenAI-Compatible AI Coaching**: Connect to **any** OpenAI-compatible endpoint — local models (Ollama, LM Studio, vLLM) or cloud providers (OpenRouter, Groq, DeepSeek, OpenAI).
+- 💾 **Idempotent Atomic State**: Persisted safely in `.sync_state.json` to prevent duplicates across runs.
+- 📧 **Direct TrainingPeaks Upload**: Optionally emails generated `.tcx` workout files directly to your personal TrainingPeaks upload mailbox (`username.upload@trainingpeaks.com`).
+- 🧪 **171 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, and CLI handlers.
+
+---
+
+## 🛠️ CLI Commands
+
+The CLI tool is available as `tp-sync` (or `trainingpeaks-sync`):
+
+| Command | What it does | Example |
+| :--- | :--- | :--- |
+| `tp-sync sync` | Run multi-source synchronization | `tp-sync sync --once` |
+| `tp-sync sync --daemon` | Run continuous background sync loop | `tp-sync sync --daemon --interval 3600` |
+| `tp-sync lago` | Inspect recent LAGO reservation confirmations from email | `tp-sync lago --days 7` |
+| `tp-sync studentapp` | Inspect StudentApp pool bookings from HAR / API | `tp-sync studentapp --har session.har` |
+| `tp-sync status` | Inspect pipeline status, credentials, and sync history | `tp-sync status` |
+| `tp-sync auth` | Perform interactive Strava OAuth 2.0 setup | `tp-sync auth` |
+| `tp-sync analyze` | Generate AI coaching feedback for an activity | `tp-sync analyze --activity-id 123456` |
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Install
+### Prerequisites
+
+- Python 3.10+
+- [`uv`](https://github.com/astral-sh/uv) (recommended) or standard `pip`
+
+### 1. Installation
 
 ```bash
+# Clone the repository
 git clone https://github.com/MauroDruwel/trainingpeaks-sync.git
 cd trainingpeaks-sync
 
-# Set up virtual environment
+# Create virtual environment and install with uv
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+*Or with standard python:*
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### 2. Configure Environment
 
-Copy `.env.example` to `.env` and configure your credentials:
+Copy `.env.example` to `.env` and fill in your credentials:
 
 ```bash
 cp .env.example .env
-```
-
-Example configuration:
-
-```env
-# 1. Strava Credentials
-STRAVA_CLIENT_ID=your_client_id
-STRAVA_CLIENT_SECRET=your_client_secret
-
-# 2. LAGO Email Reservations
-LAGO_ENABLED=true
-LAGO_IMAP_SERVER=mail.maurodruwel.be
-LAGO_IMAP_PORT=993
-LAGO_IMAP_USER=sports@maurodruwel.be
-LAGO_IMAP_PASSWORD=your_password
-LAGO_TARGET_EMAIL=swimming@maurodruwel.be
-
-# 3. StudentApp Bookings
-STUDENTAPP_ENABLED=true
-STUDENTAPP_HAR_PATH=./studentapp_session.har
-
-# 4. Multi-Source Reconciliation
-FUSION_AUTO_SYNTHETIC=true
-SWIM_DEFAULT_DISTANCE_METERS=2000
-SWIM_DEFAULT_DURATION_MINUTES=60
-FUSION_TIME_WINDOW_MINUTES=90
-
-# 5. AI Coach (Ollama example)
-AI_ENABLED=true
-AI_BASE_URL=http://localhost:11434/v1
-AI_MODEL=llama3.2
-AI_API_KEY=ollama
-AI_LANGUAGE=English
-
-# 6. Automation
-SYNC_OUTPUT_DIR=./synced_activities
-SYNC_INTERVAL=3600
-SYNC_AUTO_ANALYZE=true
-```
-
-### 3. One-Time Strava Authorization
-
-```bash
-tp-sync auth
-```
-
-*(Optional for headless servers)*: Copy the generated `refresh_token` from `.strava_tokens.json` into `STRAVA_REFRESH_TOKEN` in `.env` to run headlessly without browser prompts forever.
-
----
-
-## 💻 CLI Commands
-
-The tool provides intuitive console scripts (`trainingpeaks-sync`, `tp-sync`, or `strava-sync`):
-
-```bash
-# Run multi-source sync (default one-shot mode)
-tp-sync sync --once
-
-# Run as background daemon (checks every hour)
-tp-sync sync --daemon --interval 3600
-
-# Inspect status of all 3 sources, AI, and destinations
-tp-sync status
-
-# Inspect LAGO reservation emails (from IMAP or .eml file)
-tp-sync lago
-tp-sync lago --eml ./path/to/confirmation.eml
-
-# Inspect StudentApp pool bookings (from .har file)
-tp-sync studentapp --har ./studentapp_session.har
-
-# Analyze an existing TCX file with AI coach
-tp-sync analyze ./assets/swim.tcx --sport Swim --plan "Endurance intervals 50m pool"
-
-# Launch original interactive questionnaire
-tp-sync interactive
+chmod 600 .env
 ```
 
 ---
 
-## 🔄 Cronjob & Automation Setup
+## ⚙️ Configuration
 
-### Crontab Setup (One-Shot)
+All configuration is managed via environment variables in `.env`:
 
-Run a sync check every hour:
-
-```bash
-crontab -e
-
-# Add job:
-0 * * * * cd /path/to/trainingpeaks-sync && .venv/bin/tp-sync sync --once >> cron.log 2>&1
-```
-
-### Docker Container
-
-```bash
-docker build -t trainingpeaks-sync .
-docker run -d \
-  --name tp-sync \
-  --restart unless-stopped \
-  --env-file .env \
-  -v $(pwd)/synced_activities:/app/synced_activities \
-  trainingpeaks-sync
-```
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| **Strava Telemetry** | | |
+| `STRAVA_CLIENT_ID` | — | Strava API application client ID |
+| `STRAVA_CLIENT_SECRET` | — | Strava API application client secret |
+| `STRAVA_REFRESH_TOKEN` | — | Strava OAuth 2.0 refresh token |
+| **LAGO Email Parser** | | |
+| `LAGO_IMAP_SERVER` | `mailserver.maurodruwel.be` | IMAP mail server hostname |
+| `LAGO_IMAP_PORT` | `993` | IMAP SSL port |
+| `LAGO_MAILBOX_USER` | `sports@maurodruwel.be` | IMAP mailbox username |
+| `LAGO_MAILBOX_PASSWORD` | — | IMAP mailbox password |
+| `LAGO_TARGET_EMAIL` | `swimming@maurodruwel.be` | Target address where LAGO reservations are delivered |
+| `LAGO_LOOKBACK_DAYS` | `7` | How many days back to scan for reservation emails |
+| **StudentApp Pool Bookings** | | |
+| `STUDENTAPP_HAR_PATH` | — | Path to `.har` export from StudentApp |
+| `STUDENTAPP_API_URL` | — | Live StudentApp API endpoint (if applicable) |
+| `STUDENTAPP_BEARER_TOKEN` | — | Bearer token for live API requests |
+| **Multi-Source Fusion Engine** | | |
+| `SYNTHETIC_WORKOUT_IF_NO_WATCH` | `true` | Generate synthetic TCX if watch was forgotten |
+| `SYNTHETIC_SWIM_DISTANCE_METERS`| `2000` | Default distance for synthetic swim workouts |
+| `SYNTHETIC_SWIM_DURATION_MINS` | `105` | Default duration (1h 45m) for swim workouts |
+| `MATCH_WINDOW_MINUTES` | `90` | Correlation time window between watch & reservation |
+| **OpenAI-Compatible AI Coaching** | | |
+| `AI_COACHING_ENABLED` | `false` | Enable automated post-workout AI analysis |
+| `AI_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible endpoint URL |
+| `AI_MODEL` | `llama3.2` | Model identifier |
+| `AI_API_KEY` | `ollama` | API key (or provider token) |
+| **TrainingPeaks Output** | | |
+| `ACTIVITIES_OUTPUT_DIR` | `./synced_activities` | Local directory for exported `.tcx` files |
+| `SYNC_STATE_FILE` | `.sync_state.json` | Path to persistent sync state file |
+| `TP_EMAIL` | — | Personal TrainingPeaks upload email (`user.upload@...`) |
+| `SMTP_SERVER` | — | SMTP server for automated TCX email delivery |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USERNAME` | — | SMTP username |
+| `SMTP_PASSWORD` | — | SMTP password |
 
 ---
 
-## 🤖 Universal OpenAI-Compatible AI Coaching
+## 🤖 OpenAI-Compatible AI Coaching
 
-The AI analysis engine supports any OpenAI-compatible provider:
+The analysis engine works with **any** OpenAI-compatible API:
 
 | Provider | `AI_BASE_URL` | `AI_MODEL` | `AI_API_KEY` |
 | :--- | :--- | :--- | :--- |
@@ -198,24 +171,72 @@ The AI analysis engine supports any OpenAI-compatible provider:
 
 ---
 
-## 🏗️ Architecture
+## ⏰ Automation & Cron
+
+### Crontab Setup
+
+To run a headless sync check every hour:
+
+```bash
+crontab -e
+
+# Run hourly sync in the background
+0 * * * * cd /path/to/trainingpeaks-sync && .venv/bin/tp-sync sync --once >> cron.log 2>&1
+```
+
+### Docker Container
+
+```bash
+# Build Docker image
+docker build -t trainingpeaks-sync .
+
+# Run continuous sync daemon
+docker run -d \
+  --name tp-sync \
+  --restart unless-stopped \
+  --env-file .env \
+  -v $(pwd)/synced_activities:/app/synced_activities \
+  trainingpeaks-sync
+```
+
+---
+
+## 🧪 Running Tests
+
+```bash
+# Run full test suite
+pytest -v
+
+# Run with coverage report
+pytest --cov=src --cov-report=term-missing
+```
+
+---
+
+## 🏗️ Architecture & Code Quality
+
+This project strictly adheres to the **[Mauro Quality Gate (MQG)](https://github.com/MauroDruwel/quality-gate)**:
+- **Zero-Warning Strictness**: Clean linting and formatting via `ruff`.
+- **Automated Testing**: 171 unit and integration tests across data ingestion, TCX generation, and multi-source reconciliation.
+- **Atomic State**: Synchronization state is persisted atomically in `.sync_state.json` to prevent partial writes.
+- **Secret Hygiene**: Sensitive credentials remain strictly inside `.env` (gitignored).
 
 ```
 trainingpeaks-sync/
 ├── src/
-│   ├── config.py                 # Unified settings (Strava, Lago, StudentApp, AI, Sync)
-│   ├── models.py                 # Dataclasses (Sport, SwimReservation, FusedWorkout, ActivitySummary)
-│   ├── cli.py                    # CLI entrypoint (sync, lago, studentapp, status, auth, analyze)
+│   ├── config.py                 # Unified configuration settings
+│   ├── models.py                 # Core domain models (Sport, SwimReservation, FusedWorkout)
+│   ├── cli.py                    # CLI entrypoint (sync, lago, studentapp, status, auth)
 │   ├── sources/                  # Data ingestion providers
-│   │   ├── strava.py             # Strava REST API & OAuth
+│   │   ├── strava.py             # Strava REST API & OAuth token refresh
 │   │   ├── lago.py               # LAGO email parser & IMAP client
 │   │   └── studentapp.py         # StudentApp HAR parser & API client
 │   ├── fusion/                   # Reconciler & Synthetic workout generation
-│   │   ├── reconciler.py         # Multi-source time correlation & deduplication
+│   │   ├── reconciler.py         # Multi-source time correlation & slot duration lock
 │   │   └── synthetic_tcx.py      # Generates valid TCX when watch is forgotten
 │   ├── tcx/                      # TCX telemetry formatting & validation
 │   │   ├── builder.py            # Stream to TCX converter
-│   │   ├── formatter.py          # TrainingPeaks swim XML fixup & validation
+│   │   ├── formatter.py          # TrainingPeaks swim XML fixup & slot duration extension
 │   │   └── processor.py          # Trackpoint cleaning & Euclidean reduction
 │   ├── ai/                       # Universal OpenAI-compatible AI coaching
 │   │   ├── analyzer.py           # Training analysis generator
@@ -228,27 +249,30 @@ trainingpeaks-sync/
 ├── tests/                        # 171 comprehensive unit tests
 ├── pyproject.toml                # Modern Python packaging & tool configuration
 ├── Dockerfile                    # Background daemon container
-├── Makefile                      # Developer targets (make test, make sync, etc.)
+├── Makefile                      # Developer targets (make test, make sync)
 └── .env.example                  # Complete configuration template
 ```
 
 ---
 
-## 🧪 Running Tests
+## 🤝 Contributing
 
-```bash
-# Run all tests
-pytest -v
+Contributions are welcome! Please follow these steps:
 
-# Or use Makefile
-make test
-
-# Run tests with coverage
-make test-cov
-```
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feat/amazing-feature`
+3. Commit your changes: `git commit -m 'feat: add amazing feature'`
+4. Push to the branch: `git push origin feat/amazing-feature`
+5. Open a Pull Request
 
 ---
 
-## 📜 License
+## 📄 License
 
-MIT License — see [LICENSE](LICENSE) file for details.
+MIT © [Mauro Druwel](https://maurodruwel.be)
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://maurodruwel.be">Mauro Druwel</a> · ⭐ Star this repo if you find it useful!
+</p>
