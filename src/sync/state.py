@@ -8,7 +8,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class SyncStateManager:
 
     def record_synced(
         self,
-        activity_id: int,
+        activity_id: Any,
         athlete_id: Optional[int],
         name: str,
         sport: str,
@@ -75,6 +75,8 @@ class SyncStateManager:
         tcx_path: str,
         analyzed: bool = False,
         analysis_path: Optional[str] = None,
+        sources: Optional[List[str]] = None,
+        has_watch_data: bool = True,
     ) -> None:
         """Record activity as successfully synced and persist state."""
         if "synced_activities" not in self._state:
@@ -90,6 +92,8 @@ class SyncStateManager:
             "synced_at": now_iso,
             "analyzed": analyzed,
             "analysis_path": analysis_path,
+            "sources": sources or ["strava"],
+            "has_watch_data": has_watch_data,
         }
         self._state["last_sync"] = now_iso
         self.save()

@@ -1,6 +1,6 @@
 """
-Command line interface for Strava to TrainingPeaks (Mauro Edition).
-Provides automated cron/daemon sync, athlete authentication, status, and AI analysis.
+Command line interface for TrainingPeaks Multi-Source Sync (Mauro Edition).
+Orchestrates Strava telemetry, LAGO email bookings, and StudentApp pool reservations.
 """
 import argparse
 import os
@@ -11,6 +11,8 @@ from typing import Optional, List
 from .config import AppConfig
 from .models import Sport, AnalysisConfig
 from .strava.oauth import StravaOAuthClient
+from .sources.lago import LagoEmailParser, LagoIMAPClient
+from .sources.studentapp import StudentAppParser, StudentAppClient
 from .sync.engine import SyncEngine
 from .sync.scheduler import SyncScheduler
 from .sync.state import SyncStateManager
@@ -20,24 +22,28 @@ from .tcx.formatter import validate_tcx_file
 
 
 BANNER = r"""
-  ___ _                          _         _____ ___ 
- / __| |_ _ _ __ ___ __ __ _    | |_ ___  |_   _| _ \
- \__ \  _| '_/ _` \ V  V / _` |   |  _/ _ \   | | |  _/
- |___/\__|_| \__,_|\_/\_/\__,_|   \__\___/   |_| |_|  
-               [ Mauro Edition • Automated Sync ]
+  _____ _____    ______                  
+ |_   _|  __ \  / ____/                  
+   | | | |__) || (___  _   _ _ __   ___ 
+   | | |  ___/  \___ \| | | | '_ \ / __|
+  _| |_| |      ____) | |_| | | | | (__ 
+ |_____|_|     |_____/ \__, |_| |_|\___|
+                        __/ |           
+                       |___/  [ Mauro Edition ]
+ Multi-Source: Strava + LAGO Swim + StudentApp -> TrainingPeaks
 """
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create top-level argument parser with subcommands."""
     parser = argparse.ArgumentParser(
-        prog="strava-to-trainingpeaks",
-        description="Automated Strava to TrainingPeaks synchronization tool with AI analysis.",
+        prog="trainingpeaks-sync",
+        description="Multi-source TrainingPeaks sync tool for Strava, LAGO swim reservations, and StudentApp bookings.",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     # --- Sync command (default) ---
-    sync_parser = subparsers.add_parser("sync", help="Run automated sync (cron or daemon)")
+    sync_parser = subparsers.add_parser("sync", help="Run automated sync across all sources")
     sync_parser.add_argument(
         "--once",
         action="store_true",
@@ -59,13 +65,13 @@ def create_parser() -> argparse.ArgumentParser:
         "--limit",
         type=int,
         default=None,
-        help="Max number of recent Strava activities to inspect (default: 10)",
+        help="Max number of recent activities to inspect (default: 10)",
     )
     sync_parser.add_argument(
         "--athlete-id",
         type=int,
         default=None,
-        help="Specific athlete ID to sync (defaults to first authorized)",
+        help="Specific Strava athlete ID to sync (defaults to first authorized)",
     )
     sync_parser.add_argument(
         "--dry-run",
@@ -78,7 +84,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_const",
         const=True,
         default=None,
-        help="Force enable AI analysis on new activities",
+        help="Force enable AI coaching analysis on new activities",
     )
     sync_parser.add_argument(
         "--no-ai",
@@ -92,6 +98,24 @@ def create_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Directory to save downloaded TCX files and analysis reports",
+    )
+
+    # --- LAGO command ---
+    lago_parser = subparsers.add_parser("lago", help="Check and inspect LAGO swimming reservation emails")
+    lago_parser.add_argument(
+        "--eml",
+        type=str,
+        default=None,
+        help="Path to an .eml email file to parse directly",
+    )
+
+    # --- StudentApp command ---
+    student_parser = subparsers.add_parser("studentapp", help="Check and inspect StudentApp pool bookings")
+    student_parser.add_argument(
+        "--har",
+        type=str,
+        default=None,
+        help="Path to a .har HTTP archive export file to parse bookings from",
     )
 
     # --- Auth command ---
@@ -150,7 +174,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def cmd_sync(args: argparse.Namespace, config: AppConfig) -> int:
-    """Execute the sync command."""
+    """Execute the multi-source sync command."""
     if args.output_dir:
         config.sync.output_dir = Path(args.output_dir)
 
@@ -168,7 +192,8 @@ def cmd_sync(args: argparse.Namespace, config: AppConfig) -> int:
         return 0
 
     # One-shot cron mode
-    print(f"🚀 Running Strava to TrainingPeaks Sync...")
+    print(BANNER)
+    print(f"🚀 Running TrainingPeaks Multi-Source Sync...")
     summary = scheduler.run_once(
         athlete_id=args.athlete_id,
         limit=args.limit,
@@ -176,16 +201,79 @@ def cmd_sync(args: argparse.Namespace, config: AppConfig) -> int:
         force_ai=args.ai,
     )
 
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 55)
     print(f"📊 Sync Summary:")
-    print(f"  • Total activities examined: {summary.total_found}")
-    print(f"  • Newly downloaded & formatted: {summary.newly_synced}")
+    print(f"  • Total reconciled workouts: {summary.total_found}")
+    print(f"  • Newly processed & saved: {summary.newly_synced}")
     print(f"  • Already synced (skipped): {summary.already_synced}")
     if summary.failed > 0:
         print(f"  • Failed: {summary.failed}")
-    print("=" * 50 + "\n")
+    print("=" * 55 + "\n")
 
     return 0 if summary.failed == 0 else 1
+
+
+def cmd_lago(args: argparse.Namespace, config: AppConfig) -> int:
+    """Inspect or fetch LAGO reservation emails."""
+    print("\n🏊 LAGO Swimming Reservation Inspector")
+    print("-" * 50)
+
+    if args.eml:
+        eml_path = Path(args.eml)
+        print(f"Reading EML file: {eml_path}")
+        res = LagoEmailParser.parse_eml_file(eml_path)
+        if res:
+            _print_reservation(res)
+            return 0
+        else:
+            print("❌ No valid LAGO reservation found in EML file.")
+            return 1
+
+    client = LagoIMAPClient(config.lago)
+    reservations = client.fetch_reservations()
+    if not reservations:
+        print("No LAGO reservations found (or IMAP unconfigured).")
+        print(f"Target email: {config.lago.target_email}, account: {config.lago.imap_user}")
+        return 0
+
+    print(f"Found {len(reservations)} LAGO reservation(s):\n")
+    for r in reservations:
+        _print_reservation(r)
+    return 0
+
+
+def cmd_studentapp(args: argparse.Namespace, config: AppConfig) -> int:
+    """Inspect or parse StudentApp bookings."""
+    print("\n🎓 StudentApp Pool Booking Inspector")
+    print("-" * 50)
+
+    har_path = Path(args.har) if args.har else config.studentapp.har_path
+    if har_path:
+        print(f"Reading HAR file: {har_path}")
+        reservations = StudentAppParser.parse_har_file(har_path)
+    else:
+        client = StudentAppClient(config.studentapp)
+        reservations = client.fetch_reservations()
+
+    if not reservations:
+        print("No StudentApp bookings found.")
+        print("Tip: Provide a .har export file using --har <path> or configure STUDENTAPP_HAR_PATH in .env")
+        return 0
+
+    print(f"Found {len(reservations)} StudentApp booking(s):\n")
+    for r in reservations:
+        _print_reservation(r)
+    return 0
+
+
+def _print_reservation(r) -> None:
+    """Format single reservation output."""
+    print(f"  • [{r.source.upper()}] Ref: #{r.reservation_id}")
+    print(f"    Facility: {r.facility}")
+    print(f"    Start:    {r.start_time.strftime('%Y-%m-%d %H:%M UTC')}")
+    if r.end_time:
+        print(f"    End:      {r.end_time.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"    Duration: {r.duration_seconds // 60} mins\n")
 
 
 def cmd_auth(args: argparse.Namespace, config: AppConfig) -> int:
@@ -209,61 +297,85 @@ def cmd_auth(args: argparse.Namespace, config: AppConfig) -> int:
 
 
 def cmd_status(config: AppConfig) -> int:
-    """Display system status, athlete token status, and sync history."""
-    print("\n" + "=" * 55)
-    print("📊 STRAVA TO TRAININGPEAKS STATUS")
-    print("=" * 55)
+    """Display system status across all 3 sources, AI, and destinations."""
+    print("\n" + "=" * 60)
+    print("📊 TRAININGPEAKS MULTI-SOURCE SYNC STATUS")
+    print("=" * 60)
 
-    # Strava configuration
-    print("\n[Strava Configuration]")
+    # 1. Strava Source
+    print("\n[1. Strava Watch Telemetry]")
     if config.strava.is_oauth_configured:
         print(f"  • Client ID: {config.strava.client_id}")
-        print("  • Client Secret: [Set]")
+        print("  • Credentials: ✅ Present")
     else:
-        print("  • OAuth Credentials: ❌ Not configured (set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET)")
+        print("  • Credentials: ⚪ Not configured")
 
     if config.strava.refresh_token:
         print("  • Headless Refresh Token: ✅ Present in environment")
 
-    # Stored athletes
-    oauth_client = None
     if config.strava.is_oauth_configured:
         try:
             oauth_client = StravaOAuthClient(config.strava.token_file)
             athletes = oauth_client.list_athletes()
-            print(f"\n[Registered Athletes: {len(athletes)}]")
-            if athletes:
-                for ath_id, name in athletes.items():
-                    tok = oauth_client.storage.get_token(ath_id)
-                    health = "🟢 Valid" if tok and not tok.is_expired() else "🟡 Needs refresh"
-                    print(f"  • {name} (ID: {ath_id}): {health}")
-            else:
-                print("  • None registered yet. Run 'strava-to-trainingpeaks auth' to add an athlete.")
+            print(f"  • Registered Athletes: {len(athletes)}")
+            for ath_id, name in athletes.items():
+                tok = oauth_client.storage.get_token(ath_id)
+                health = "🟢 Valid" if tok and not tok.is_expired() else "🟡 Needs refresh"
+                print(f"    - {name} (ID: {ath_id}): {health}")
         except Exception as err:
-            print(f"  • Error loading athlete tokens: {err}")
+            print(f"  • Error reading tokens: {err}")
 
-    # AI Configuration
-    print("\n[AI Analysis]")
-    print(f"  • Enabled: {'✅ Yes' if config.ai.enabled else '⚪ No (enable with AI_ENABLED=true or provide key/url)'}")
+    # 2. LAGO Swimming Reservations
+    print("\n[2. LAGO Swimming Reservations]")
+    print(f"  • Target Email: {config.lago.target_email}")
+    print(f"  • Mailbox Account: {config.lago.imap_user or 'None'}")
+    if config.lago.is_configured:
+        print(f"  • IMAP Server: ✅ Configured ({config.lago.imap_server}:{config.lago.imap_port})")
+    else:
+        print("  • IMAP Server: ⚪ Not configured (set LAGO_IMAP_SERVER and LAGO_IMAP_PASSWORD in .env)")
+
+    # 3. StudentApp Bookings
+    print("\n[3. StudentApp Bookings]")
+    if config.studentapp.har_path:
+        har_status = "✅ Found" if config.studentapp.har_path.exists() else "❌ File not found"
+        print(f"  • HAR File: {config.studentapp.har_path} ({har_status})")
+    else:
+        print("  • HAR File: ⚪ None specified")
+
+    if config.studentapp.api_url:
+        print(f"  • Live API: {config.studentapp.api_url}")
+    else:
+        print("  • Live API: ⚪ Not configured")
+
+    # 4. Reconciliation & Synthetic Workouts
+    print("\n[4. Multi-Source Fusion & Watch-Forgotten Support]")
+    print(f"  • Auto-generate synthetic workout if watch forgotten: {'✅ Yes' if config.fusion.auto_generate_synthetic_if_watch_forgotten else '⚪ No'}")
+    print(f"  • Default synthetic swim distance: {config.fusion.synthetic_swim_distance_meters:.0f}m")
+    print(f"  • Default duration: {config.fusion.synthetic_swim_duration_seconds // 60} mins")
+    print(f"  • Matching time window: ±{config.fusion.time_window_minutes} mins")
+
+    # 5. AI Configuration
+    print("\n[5. AI Coaching Analysis (OpenAI-Compatible)]")
+    print(f"  • Enabled: {'✅ Yes' if config.ai.enabled else '⚪ No'}")
     if config.ai.enabled:
         print(f"  • Endpoint: {config.ai.base_url or 'Default OpenAI API'}")
         print(f"  • Model: {config.ai.model}")
         print(f"  • Language: {config.ai.language}")
-        print(f"  • TTS: {'Enabled' if config.ai.tts_enabled else 'Disabled'}")
+        print(f"  • Speech (TTS): {'Enabled' if config.ai.tts_enabled else 'Disabled'}")
 
-    # Sync state
+    # 6. TrainingPeaks Destination
     state_mgr = SyncStateManager(config.sync.state_file)
-    print("\n[Sync State]")
-    print(f"  • Output directory: {config.sync.output_dir.resolve()}")
-    print(f"  • State file: {config.sync.state_file.resolve()}")
-    print(f"  • Last sync: {state_mgr.get_last_sync() or 'Never'}")
-    print(f"  • Total synced activities: {state_mgr.get_total_synced_count()}")
+    print("\n[6. TrainingPeaks Destination & Sync State]")
+    print(f"  • Output Directory: {config.sync.output_dir.resolve()}")
+    print(f"  • State File: {config.sync.state_file.resolve()}")
+    print(f"  • Last Sync: {state_mgr.get_last_sync() or 'Never'}")
+    print(f"  • Total Synced Activities: {state_mgr.get_total_synced_count()}")
     if config.sync.is_email_upload_configured:
-        print(f"  • TrainingPeaks Email Upload: ✅ Configured -> {config.sync.tp_email}")
+        print(f"  • Email Direct Upload: ✅ Configured -> {config.sync.tp_email}")
     else:
-        print("  • TrainingPeaks Email Upload: ⚪ Not configured (manual file upload or set TP_EMAIL & SMTP_*)")
+        print("  • Email Direct Upload: ⚪ Not configured (manual file drop or set TP_EMAIL & SMTP_*)")
 
-    print("\n" + "=" * 55 + "\n")
+    print("\n" + "=" * 60 + "\n")
     return 0
 
 
@@ -316,7 +428,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     parser = create_parser()
 
-    # If no arguments provided, default to 'sync' or show help
+    # If no arguments provided, default to 'sync'
     if not argv:
         argv = ["sync", "--once"]
 
@@ -325,6 +437,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.command == "sync":
         return cmd_sync(args, config)
+    elif args.command == "lago":
+        return cmd_lago(args, config)
+    elif args.command == "studentapp":
+        return cmd_studentapp(args, config)
     elif args.command == "auth":
         return cmd_auth(args, config)
     elif args.command == "status":

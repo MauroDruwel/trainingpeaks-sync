@@ -44,6 +44,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
+            "trainingpeaks-sync=src.cli:main",
+            "tp-sync=src.cli:main",
             "strava-to-trainingpeaks=src.cli:main",
             "strava-sync=src.cli:main",
             "strava-coach-mode=src.coach_sync:coach_mode_main",

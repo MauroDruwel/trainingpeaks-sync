@@ -110,3 +110,21 @@ class TestCLI(unittest.TestCase):
             exit_code = main([])
             self.assertEqual(exit_code, 0)
             mock_cmd_sync.assert_called_once()
+
+    def test_cmd_lago(self):
+        config = AppConfig()
+        parser = create_parser()
+        args = parser.parse_args(["lago"])
+        with patch("src.cli.LagoIMAPClient.fetch_reservations", return_value=[]), \
+             patch("builtins.print"):
+            exit_code = main(["lago"])
+            self.assertEqual(exit_code, 0)
+
+    def test_cmd_studentapp(self):
+        config = AppConfig()
+        parser = create_parser()
+        args = parser.parse_args(["studentapp"])
+        with patch("src.cli.StudentAppClient.fetch_reservations", return_value=[]), \
+             patch("builtins.print"):
+            exit_code = main(["studentapp"])
+            self.assertEqual(exit_code, 0)

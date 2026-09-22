@@ -1,5 +1,6 @@
 """
-Domain models and data structures for Strava to TrainingPeaks.
+Domain models and data structures for TrainingPeaks Multi-Source Sync (Mauro Edition).
+Supports Strava watch telemetry, LAGO swimming reservations, and StudentApp bookings.
 """
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -99,6 +100,14 @@ class ActivitySummary:
     moving_time_seconds: int = 0
     total_elevation_gain: float = 0.0
 
+    @property
+    def start_datetime(self) -> datetime:
+        """Parse start_date string into UTC datetime object."""
+        try:
+            return datetime.fromisoformat(self.start_date.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.now(timezone.utc)
+
     @classmethod
     def from_strava_dict(cls, data: Dict[str, Any]) -> "ActivitySummary":
         raw_type = data.get("type", "Other")
@@ -116,15 +125,57 @@ class ActivitySummary:
 
 
 @dataclass
+class SwimReservation:
+    """Represents a swimming pool reservation from LAGO email or StudentApp."""
+    source: str  # "lago" or "studentapp"
+    reservation_id: str
+    title: str
+    facility: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_seconds: int = 3600  # Default: 1 hour
+    raw_details: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def date_str(self) -> str:
+        """Return YYYY-MM-DD date representation."""
+        return self.start_time.strftime("%Y-%m-%d")
+
+
+@dataclass
+class FusedWorkout:
+    """
+    Reconciled workout session combining watch telemetry, LAGO reservation,
+    and StudentApp booking. If watch was forgotten, has_watch_data is False.
+    """
+    session_id: str
+    sport: Sport
+    start_time: datetime
+    duration_seconds: int
+    distance_meters: float
+    sources: List[str]  # e.g. ["strava", "lago", "studentapp"]
+    has_watch_data: bool
+    title: str
+    description: str = ""
+    strava_activity: Optional[ActivitySummary] = None
+    lago_reservation: Optional[SwimReservation] = None
+    studentapp_reservation: Optional[SwimReservation] = None
+    tcx_path: Optional[str] = None
+    analysis_path: Optional[str] = None
+
+
+@dataclass
 class SyncResult:
-    """Result of a single activity sync operation."""
-    activity_id: int
-    athlete_id: int
+    """Result of a single activity or fused workout sync operation."""
+    activity_id: Any  # int (Strava id) or str (fused session id)
+    athlete_id: Optional[int]
     success: bool
     tcx_path: Optional[str] = None
     analysis_path: Optional[str] = None
     analysis_text: Optional[str] = None
     error_message: Optional[str] = None
+    sources: List[str] = field(default_factory=list)
+    has_watch_data: bool = True
     synced_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 

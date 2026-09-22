@@ -1,6 +1,7 @@
 """
-Automated Strava to TrainingPeaks sync engine.
-Coordinates fetching from Strava, formatting TCX, running AI analysis, and dispatching.
+TrainingPeaks Multi-Source Sync Engine (Mauro Edition).
+Orchestrates Strava telemetry, LAGO email bookings, and StudentApp pool reservations,
+reconciling them into unified TrainingPeaks workouts with optional synthetic generation.
 """
 import logging
 import re
@@ -12,11 +13,17 @@ from ..config import AppConfig
 from ..models import (
     Sport,
     ActivitySummary,
+    SwimReservation,
+    FusedWorkout,
     SyncResult,
     SyncBatchSummary,
 )
 from ..strava.oauth import StravaOAuthClient
 from ..strava.api import StravaAPIClient
+from ..sources.lago import LagoIMAPClient
+from ..sources.studentapp import StudentAppClient
+from ..fusion.reconciler import WorkoutReconciler
+from ..fusion.synthetic_tcx import generate_synthetic_swim_tcx
 from ..tcx.formatter import format_swim_tcx, format_xml_file, validate_tcx_file
 from ..ai.analyzer import AIAnalyzer
 from .state import SyncStateManager
@@ -34,19 +41,23 @@ def sanitize_filename(name: str) -> str:
 
 
 class SyncEngine:
-    """Core pipeline engine for automated, unattended syncing."""
+    """Core pipeline engine for automated, multi-source workout synchronization."""
 
     def __init__(
         self,
         config: Optional[AppConfig] = None,
         oauth_client: Optional[StravaOAuthClient] = None,
         api_client: Optional[StravaAPIClient] = None,
+        lago_client: Optional[LagoIMAPClient] = None,
+        studentapp_client: Optional[StudentAppClient] = None,
         state_manager: Optional[SyncStateManager] = None,
         ai_analyzer: Optional[AIAnalyzer] = None,
+        reconciler: Optional[WorkoutReconciler] = None,
     ):
         self.config = config or AppConfig.load()
         self.state_manager = state_manager or SyncStateManager(self.config.sync.state_file)
 
+        # 1. Strava client initialization
         self.oauth_client = oauth_client
         self.api_client = api_client
         if not self.oauth_client and self.config.strava.is_oauth_configured:
@@ -59,10 +70,21 @@ class SyncEngine:
         if not self.api_client and self.oauth_client:
             self.api_client = StravaAPIClient(self.oauth_client)
 
+        # 2. LAGO email reservation client
+        self.lago_client = lago_client or LagoIMAPClient(self.config.lago)
+
+        # 3. StudentApp booking client
+        self.studentapp_client = studentapp_client or StudentAppClient(self.config.studentapp)
+
+        # 4. Multi-source reconciler
+        self.reconciler = reconciler or WorkoutReconciler(self.config.fusion)
+
+        # 5. AI Analyzer
         self.ai_analyzer = ai_analyzer
         if not self.ai_analyzer and self.config.ai.enabled:
             self.ai_analyzer = AIAnalyzer(self.config.ai)
 
+        # 6. TrainingPeaks email uploader
         self.email_uploader = TrainingPeaksEmailUploader(self.config.sync)
 
     def sync(
@@ -73,42 +95,55 @@ class SyncEngine:
         force_ai: Optional[bool] = None,
     ) -> SyncBatchSummary:
         """
-        Execute automated sync check for new activities.
+        Execute automated multi-source synchronization.
+        Gathers Strava telemetry, LAGO email bookings, and StudentApp reservations,
+        fuses matching sessions, generates synthetic entries when watch is forgotten,
+        and saves formatted TCX files for TrainingPeaks.
         """
         batch_summary = SyncBatchSummary()
-
-        if not self.api_client or not self.oauth_client:
-            logger.error(
-                "Strava API client is not configured. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET."
-            )
-            return batch_summary
-
-        target_athlete_id = athlete_id or self.config.strava.athlete_id
-        valid_token = self.oauth_client.get_valid_token(target_athlete_id)
-        if not valid_token:
-            logger.error("No valid authorization token found. Please run authentication first.")
-            return batch_summary
-
-        actual_athlete_id = valid_token.athlete_id
         fetch_limit = limit or self.config.sync.limit
 
-        logger.info(
-            "Checking Strava activities for athlete %s (ID: %s, limit: %d)...",
-            valid_token.athlete_name,
-            actual_athlete_id,
-            fetch_limit
-        )
+        strava_activities: List[ActivitySummary] = []
+        actual_athlete_id: Optional[int] = athlete_id or self.config.strava.athlete_id
 
-        activities_raw = self.api_client.list_activities(
-            athlete_id=actual_athlete_id,
-            per_page=fetch_limit
-        )
+        # 1. Fetch Strava activities if configured
+        if self.api_client and self.oauth_client:
+            token = self.oauth_client.get_valid_token(actual_athlete_id)
+            if token:
+                actual_athlete_id = token.athlete_id
+                logger.info("Fetching recent Strava activities for athlete %s...", token.athlete_name)
+                raw_activities = self.api_client.list_activities(athlete_id=actual_athlete_id, per_page=fetch_limit)
+                if raw_activities:
+                    for act_dict in raw_activities:
+                        if act_dict.get("id"):
+                            strava_activities.append(ActivitySummary.from_strava_dict(act_dict))
 
-        if activities_raw is None:
-            logger.error("Failed to retrieve activities from Strava API.")
+        # 2. Fetch LAGO reservations if configured
+        lago_reservations: List[SwimReservation] = []
+        if self.config.lago.is_configured or self.config.lago.enabled:
+            logger.info("Checking LAGO email reservations (IMAP / sample inbox)...")
+            lago_reservations = self.lago_client.fetch_reservations()
+
+        # 3. Fetch StudentApp bookings if configured
+        studentapp_reservations: List[SwimReservation] = []
+        if self.config.studentapp.is_configured or self.config.studentapp.enabled:
+            logger.info("Checking StudentApp pool bookings (HAR file / sports API)...")
+            studentapp_reservations = self.studentapp_client.fetch_reservations()
+
+        # Guard: check if any data was found or any source configured
+        total_sources_active = bool(self.api_client or self.config.lago.is_configured or self.config.studentapp.is_configured)
+        if not total_sources_active:
+            logger.error("No input sources configured (Strava, LAGO, or StudentApp). Please check .env settings.")
             return batch_summary
 
-        batch_summary.total_found = len(activities_raw)
+        # 4. Multi-Source Reconciler / Fusion
+        fused_workouts = self.reconciler.reconcile(
+            strava_activities=strava_activities,
+            lago_reservations=lago_reservations,
+            studentapp_reservations=studentapp_reservations,
+        )
+
+        batch_summary.total_found = len(fused_workouts)
         output_dir = self.config.sync.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -118,47 +153,47 @@ class SyncEngine:
             else (self.config.sync.auto_analyze and self.config.ai.enabled)
         )
 
-        for act_data in activities_raw:
-            activity_id = act_data.get("id")
-            if not activity_id:
-                continue
-
-            summary = ActivitySummary.from_strava_dict(act_data)
-
-            # Sport filter check
+        # 5. Process each fused workout
+        for workout in fused_workouts:
+            # Check sport filter
             if self.config.sync.sport_filter:
                 filter_sport = self.config.sync.sport_filter.lower()
-                if filter_sport not in summary.sport.value.lower() and filter_sport not in summary.strava_type.lower():
-                    logger.debug("Skipping activity %s (sport %s != filter)", activity_id, summary.sport.value)
+                if filter_sport not in workout.sport.value.lower():
                     continue
 
-            # Idempotency check: skip already synced
-            if self.state_manager.is_synced(activity_id):
-                logger.debug("Activity %s already synced, skipping.", activity_id)
+            # Idempotency check: check both session_id and strava id
+            already_synced = self.state_manager.is_synced(workout.session_id)
+            if not already_synced and workout.strava_activity:
+                already_synced = self.state_manager.is_synced(workout.strava_activity.id)
+
+            if already_synced:
+                logger.debug("Workout %s already synced, skipping.", workout.session_id)
                 batch_summary.already_synced += 1
                 continue
 
-            logger.info("New activity found: [%s] %s (%s)", activity_id, summary.name, summary.sport.value)
+            sources_label = "+".join(workout.sources).upper()
+            logger.info("Processing workout: [%s] %s (Sources: %s)", workout.session_id, workout.title, sources_label)
 
             if dry_run:
-                logger.info("[Dry Run] Would sync activity %s: %s", activity_id, summary.name)
+                logger.info("[Dry Run] Would sync: %s (%s)", workout.title, sources_label)
                 batch_summary.newly_synced += 1
                 batch_summary.results.append(
                     SyncResult(
-                        activity_id=activity_id,
+                        activity_id=workout.session_id,
                         athlete_id=actual_athlete_id,
                         success=True,
-                        tcx_path=None
+                        sources=workout.sources,
+                        has_watch_data=workout.has_watch_data,
                     )
                 )
                 continue
 
-            # Real sync execution
-            result = self._process_single_activity(
+            # Real execution
+            result = self._process_fused_workout(
+                workout=workout,
                 athlete_id=actual_athlete_id,
-                summary=summary,
                 output_dir=output_dir,
-                should_analyze=should_analyze
+                should_analyze=should_analyze,
             )
 
             batch_summary.results.append(result)
@@ -169,36 +204,45 @@ class SyncEngine:
 
         return batch_summary
 
-    def _process_single_activity(
+    def _process_fused_workout(
         self,
-        athlete_id: int,
-        summary: ActivitySummary,
+        workout: FusedWorkout,
+        athlete_id: Optional[int],
         output_dir: Path,
         should_analyze: bool,
     ) -> SyncResult:
-        """Download, format, optionally analyze, and store a single activity."""
-        date_str = summary.start_date[:10]
-        safe_name = sanitize_filename(summary.name)
-        tcx_filename = f"{date_str}_{summary.sport.value}_{safe_name}_{summary.id}.tcx"
+        """Download or generate TCX, apply TrainingPeaks formatting, analyze, and dispatch."""
+        date_str = workout.start_time.strftime("%Y-%m-%d")
+        safe_name = sanitize_filename(workout.title)
+        tcx_filename = f"{date_str}_{workout.sport.value}_{safe_name}_{workout.session_id}.tcx"
         tcx_path = output_dir / tcx_filename
 
         try:
-            downloaded = self.api_client.download_tcx(athlete_id, summary.id, str(tcx_path))
-            if not downloaded or not tcx_path.exists():
-                logger.error("Failed to download TCX for activity %s", summary.id)
-                return SyncResult(
-                    activity_id=summary.id,
-                    athlete_id=athlete_id,
-                    success=False,
-                    error_message="TCX download returned empty or file not written"
-                )
+            if workout.has_watch_data and workout.strava_activity and self.api_client:
+                # Real watch telemetry from Strava
+                downloaded = self.api_client.download_tcx(athlete_id, workout.strava_activity.id, str(tcx_path))
+                if not downloaded or not tcx_path.exists():
+                    return SyncResult(
+                        activity_id=workout.session_id,
+                        athlete_id=athlete_id,
+                        success=False,
+                        error_message="TCX download returned empty or file not written",
+                        sources=workout.sources,
+                        has_watch_data=True,
+                    )
+            else:
+                # Synthetic workout generation (e.g. watch forgotten!)
+                tcx_content = generate_synthetic_swim_tcx(workout=workout)
+                with open(tcx_path, "w", encoding="utf-8") as f:
+                    f.write(tcx_content)
+                logger.info("Generated synthetic swim TCX file: %s", tcx_path.name)
 
-            # Post-process TCX according to sport
-            if summary.sport in (Sport.SWIM, Sport.OTHER):
+            # TCX post-processing
+            if workout.sport in (Sport.SWIM, Sport.OTHER):
                 format_swim_tcx(str(tcx_path))
             format_xml_file(str(tcx_path))
 
-            # Run validation
+            # Validation
             valid, tcx_data = validate_tcx_file(str(tcx_path))
             if not valid:
                 logger.warning("Generated TCX file failed validation: %s", tcx_path)
@@ -209,54 +253,105 @@ class SyncEngine:
 
             if should_analyze and self.ai_analyzer:
                 try:
-                    logger.info("Generating AI analysis for %s...", summary.name)
+                    logger.info("Generating AI coaching analysis for %s...", workout.title)
                     if tcx_data:
-                        analysis_text = self.ai_analyzer.analyze(tcx_data, summary.sport)
+                        analysis_text = self.ai_analyzer.analyze(tcx_data, workout.sport)
                     if analysis_text and self.config.sync.save_analysis_file:
-                        analysis_filename = f"{date_str}_{summary.sport.value}_{safe_name}_{summary.id}_analysis.md"
+                        analysis_filename = f"{date_str}_{workout.sport.value}_{safe_name}_{workout.session_id}_analysis.md"
                         analysis_file_path = output_dir / analysis_filename
                         with open(analysis_file_path, "w", encoding="utf-8") as f:
-                            f.write(f"# Training Analysis: {summary.name}\n\n")
-                            f.write(f"- **Date**: {summary.start_date}\n")
-                            f.write(f"- **Sport**: {summary.sport.value}\n")
-                            f.write(f"- **Distance**: {summary.distance_meters / 1000:.2f} km\n\n")
+                            f.write(f"# TrainingPeaks Analysis: {workout.title}\n\n")
+                            f.write(f"- **Date**: {workout.start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+                            f.write(f"- **Sport**: {workout.sport.value}\n")
+                            f.write(f"- **Sources**: {', '.join(s.upper() for s in workout.sources)}\n")
+                            f.write(f"- **Watch Data**: {'Recorded on watch' if workout.has_watch_data else 'Synthetic (Watch forgotten)'}\n")
+                            f.write(f"- **Distance**: {workout.distance_meters / 1000:.2f} km\n\n")
+                            f.write(f"### Description\n{workout.description}\n\n")
+                            f.write("### AI Coaching Report\n")
                             f.write(analysis_text)
                         analysis_path = str(analysis_file_path)
-                        logger.info("Saved AI analysis report to: %s", analysis_path)
                 except Exception as ai_err:
-                    logger.warning("AI analysis failed for activity %s: %s", summary.id, ai_err)
+                    logger.warning("AI analysis failed for %s: %s", workout.session_id, ai_err)
 
             # Optional TrainingPeaks email upload
             if self.email_uploader.can_send():
-                self.email_uploader.send_tcx(tcx_path, subject=f"TrainingPeaks Activity: {summary.name}")
+                self.email_uploader.send_tcx(tcx_path, subject=f"TrainingPeaks Activity: {workout.title}")
 
-            # Record in sync state
+            # Persist state
             self.state_manager.record_synced(
-                activity_id=summary.id,
+                activity_id=workout.session_id,
                 athlete_id=athlete_id,
-                name=summary.name,
-                sport=summary.sport.value,
-                start_date=summary.start_date,
+                name=workout.title,
+                sport=workout.sport.value,
+                start_date=workout.start_time.isoformat(),
                 tcx_path=str(tcx_path),
                 analyzed=bool(analysis_text),
                 analysis_path=analysis_path,
+                sources=workout.sources,
+                has_watch_data=workout.has_watch_data,
             )
 
-            logger.info("Successfully synced activity %s to %s", summary.id, tcx_path.name)
+            # Also record underlying Strava ID if present to maintain backward compatibility
+            if workout.strava_activity:
+                self.state_manager.record_synced(
+                    activity_id=workout.strava_activity.id,
+                    athlete_id=athlete_id,
+                    name=workout.title,
+                    sport=workout.sport.value,
+                    start_date=workout.start_time.isoformat(),
+                    tcx_path=str(tcx_path),
+                    analyzed=bool(analysis_text),
+                    analysis_path=analysis_path,
+                    sources=workout.sources,
+                    has_watch_data=workout.has_watch_data,
+                )
+
+            logger.info("Successfully synced %s to %s", workout.title, tcx_path.name)
             return SyncResult(
-                activity_id=summary.id,
+                activity_id=workout.session_id,
                 athlete_id=athlete_id,
                 success=True,
                 tcx_path=str(tcx_path),
                 analysis_path=analysis_path,
                 analysis_text=analysis_text,
+                sources=workout.sources,
+                has_watch_data=workout.has_watch_data,
             )
 
         except Exception as err:
-            logger.error("Error processing activity %s: %s", summary.id, str(err))
+            logger.error("Error processing workout %s: %s", workout.session_id, err)
             return SyncResult(
-                activity_id=summary.id,
+                activity_id=workout.session_id,
                 athlete_id=athlete_id,
                 success=False,
-                error_message=str(err)
+                error_message=str(err),
+                sources=workout.sources,
+                has_watch_data=workout.has_watch_data,
             )
+
+    def _process_single_activity(
+        self,
+        athlete_id: int,
+        summary: ActivitySummary,
+        output_dir: Path,
+        should_analyze: bool,
+    ) -> SyncResult:
+        """Backward compatibility wrapper for single Strava activity sync."""
+        workout = FusedWorkout(
+            session_id=f"fused_strava_{summary.id}",
+            sport=summary.sport,
+            start_time=summary.start_datetime,
+            duration_seconds=summary.elapsed_time_seconds,
+            distance_meters=summary.distance_meters,
+            sources=["strava"],
+            has_watch_data=True,
+            title=summary.name,
+            description=f"Strava activity {summary.id}",
+            strava_activity=summary,
+        )
+        return self._process_fused_workout(
+            workout=workout,
+            athlete_id=athlete_id,
+            output_dir=output_dir,
+            should_analyze=should_analyze,
+        )
