@@ -21,27 +21,31 @@ setup(
         re.compile(r'[0-9]+\.[0-9]+\.[0-9]+'),
         read('__version__.py')
     )[0],
-    author="Lucas de Brito Silva",
-    author_email="lucasbsilva29@gmail.com",
-    description="A tool to sync Strava activities with TrainingPeaks, with the OpenAI API creating the workout descriptions.",
+    author="Mauro Druwel",
+    description="Automated Strava to TrainingPeaks sync tool with universal OpenAI-compatible AI analysis.",
     packages=find_packages(),
     install_requires=[
-        "defusedxml==0.7.1",
-        "langchain_openai==1.6.2",
-        "langchain_core==1.6.2",
-        "numpy==2.5.3",
-        "openai==3.13.0",
-        "pandas==3.0.5",
-        "python-dotenv==1.2.3",
-        "questionary==2.1.1",
-        "requests",
-        "scipy==1.18.1",
-        "tcxreader==0.4.11",
-        "tqdm==4.70.1"
+        "defusedxml>=0.7.1",
+        "numpy>=1.26.0",
+        "openai>=1.0.0",
+        "pandas>=2.0.0",
+        "python-dotenv>=1.0.0",
+        "questionary>=2.0.0",
+        "requests>=2.28.0",
+        "scipy>=1.11.0",
+        "tcxreader>=0.4.11",
+        "tqdm>=4.66.0"
     ],
+    extras_require={
+        "dev": [
+            "pytest>=8.0.0",
+            "pytest-cov>=5.0.0"
+        ]
+    },
     entry_points={
         "console_scripts": [
-            "strava-to-trainingpeaks=src.main:main",
+            "strava-to-trainingpeaks=src.cli:main",
+            "strava-sync=src.cli:main",
             "strava-coach-mode=src.coach_sync:coach_mode_main",
         ],
     },

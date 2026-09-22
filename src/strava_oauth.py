@@ -588,8 +588,15 @@ class StravaOAuthClient:
             )
             return None
 
-    def get_valid_token(self, athlete_id: int) -> Optional[AthleteToken]:
+    def get_valid_token(self, athlete_id: Optional[int] = None) -> Optional[AthleteToken]:
         """Get a valid (non-expired) token for an athlete, refreshing if needed."""
+        if athlete_id is None:
+            athletes = self.list_athletes()
+            if athletes:
+                athlete_id = next(iter(athletes))
+            else:
+                return None
+
         token = self.storage.get_token(athlete_id)
         if not token:
             return None
@@ -625,11 +632,11 @@ class StravaAPIClient:
             "Authorization": f"{token.token_type} {token.access_token}"
         }
 
-    def get_activity(self, athlete_id: int, activity_id: int) -> Optional[dict]:
+    def get_activity(self, athlete_id: Optional[int], activity_id: int) -> Optional[dict]:
         """Get activity details."""
         token = self.oauth_client.get_valid_token(athlete_id)
         if not token:
-            self.logger.error("No valid token for athlete %d", athlete_id)
+            self.logger.error("No valid token for athlete %s", athlete_id)
             return None
 
         try:
@@ -645,12 +652,12 @@ class StravaAPIClient:
             return None
 
     def list_activities(
-        self, athlete_id: int, page: int = 1, per_page: int = 30
+        self, athlete_id: Optional[int] = None, page: int = 1, per_page: int = 30
     ) -> Optional[list]:
         """List athlete's recent activities."""
         token = self.oauth_client.get_valid_token(athlete_id)
         if not token:
-            self.logger.error("No valid token for athlete %d", athlete_id)
+            self.logger.error("No valid token for athlete %s", athlete_id)
             return None
 
         try:
@@ -667,7 +674,7 @@ class StravaAPIClient:
             return None
 
     def download_tcx(
-        self, athlete_id: int, activity_id: int, output_path: str
+        self, athlete_id: Optional[int], activity_id: int, output_path: str
     ) -> Optional[str]:
         """
         Download activity as TCX file.
@@ -678,7 +685,7 @@ class StravaAPIClient:
         """
         token = self.oauth_client.get_valid_token(athlete_id)
         if not token:
-            self.logger.error("No valid token for athlete %d", athlete_id)
+            self.logger.error("No valid token for athlete %s", athlete_id)
             return None
 
         activity = self.get_activity(athlete_id, activity_id)

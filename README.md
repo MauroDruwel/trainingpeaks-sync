@@ -1,256 +1,218 @@
-# Strava to TrainingPeaks
+# Strava to TrainingPeaks (Mauro Edition) ⚡
 
-![strava-to-tp-logo](https://raw.githubusercontent.com/Lucs1590/strava-to-trainingpeaks/master/assets/strava_tp_low.png)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-149%20passed-brightgreen.svg)](#running-tests)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Sync%20your%20strava%20trainings%20with%20Traning%20Peaks&url=https://github.com/Lucs1590/strava-to-trainingpeaks&hashtags=strava,github,opensource,strava,dev)
-[![codecov](https://codecov.io/gh/Lucs1590/strava-to-trainingpeaks/graph/badge.svg?token=V7BM0ZNAXS)](https://codecov.io/gh/Lucs1590/strava-to-trainingpeaks)
-[![Python Coverage](https://github.com/Lucs1590/strava-to-trainingpeaks/actions/workflows/coverage.yml/badge.svg)](https://github.com/Lucs1590/strava-to-trainingpeaks/actions/workflows/coverage.yml)
-[![CodeFactor](https://www.codefactor.io/repository/github/lucs1590/strava-to-trainingpeaks/badge)](https://www.codefactor.io/repository/github/lucs1590/strava-to-trainingpeaks)
+An automated, reliable bridge to sync your [Strava](https://www.strava.com/) workouts into [TrainingPeaks](https://www.trainingpeaks.com/), with **custom OpenAI-compatible AI coaching analysis** (Ollama, LM Studio, vLLM, OpenRouter, Groq, DeepSeek, or OpenAI) and **unattended cron / daemon automation**.
 
-A powerful tool that simplifies downloading activities from [Strava](https://www.strava.com/) and uploading them to [TrainingPeaks](https://www.trainingpeaks.com/), with optional **AI-powered training analysis** and **multi-athlete coach mode**.
+---
 
-## Overview
+## 🌟 What's New & Cool in This Fork
 
-Originally created to sync triathlon training data from Samsung Watch to TrainingPeaks (via Strava as an intermediary), this tool has evolved to include:
+- ⏱️ **Runs Like a Cronjob**: Fully headless, non-interactive sync engine. Run via `crontab`, `systemd`, or built-in `--daemon` loop.
+- 🧠 **Universal OpenAI-Compatible AI Support**: Connect to **ANY** OpenAI-compatible API — local models (Ollama, LM Studio, vLLM, LocalAI) or cloud providers (OpenRouter, Groq, DeepSeek, OpenAI).
+- 💾 **State Tracking & Idempotency**: Keeps track of processed workouts in `.sync_state.json`. Never downloads or processes the same activity twice.
+- 🧹 **Clean Modular Architecture**: Cleanly separated into `src/strava/`, `src/tcx/`, `src/ai/`, `src/sync/`, and `src/cli.py` instead of a single monolithic script.
+- 📦 **Lean Dependencies**: Wiped out bloat (`cx_Freeze`, unnecessary heavy dependencies) for maximum reliability and fast execution.
+- 📧 **Optional Auto-Upload to TrainingPeaks**: Can automatically email generated TCX files to your TrainingPeaks upload address (`username.upload@trainingpeaks.com`) via SMTP.
+- 🧪 **149 Automated Tests**: Comprehensive test suite covering config, sync engine, state persistence, TCX conversion, AI analyzer, and CLI.
 
-- **Personal Mode**: Individual athletes can download and process their own activities
-- **Coach Mode**: Coaches can manage and sync activities for multiple athletes via OAuth
-- **AI Analysis**: Optional LLM-powered training insights and performance feedback
-- **Audio Summaries**: Generate spoken analysis of your training sessions
+---
 
-## Features
+## 🚀 Quick Start
 
-### Core Functionality
-- 🏃 Download activities from Strava (running, cycling, swimming, and more)
-- 📊 Format TCX files for TrainingPeaks compatibility
-- ✅ Validate and optimize TCX data for different sports
-- 🎯 Interactive CLI with guided workflows
+### 1. Install
 
-### AI-Powered Analysis
-- 🤖 Intelligent training analysis using OpenAI's GPT models
-- 📈 Performance metrics evaluation (pace, heart rate, power, cadence)
-- 💪 Identify strengths and areas for improvement
-- 🎧 Generate audio summaries of your training sessions
-
-### Coach Mode (OAuth)
-- 👥 Manage multiple athletes from a single interface
-- 🔐 Secure OAuth 2.0 authorization
-- 🔄 Automatic token refresh
-- 📥 Batch download activities for your athletes
-
-## Documentation
-
-For detailed guides and tutorials, check out these articles:
-
-- 📝 [Strava to Training Peaks - Setup Guide](https://medium.com/p/fa3a0fa05f79)
-- 🤖 [LLM to Strava: Intelligent Training Analysis with AI Co-coaching](https://levelup.gitconnected.com/llm-to-strava-intelligent-training-analysis-with-ai-co-coaching-03f1cf866597)
-
-[Watch the video guide on exporting from Strava to TrainingPeaks manually](https://www.youtube.com/watch?v=Y0nWzOAM8_M)
-
-## Quick Start
-
-### Personal Mode
+Clone the repository and install with pip or uv:
 
 ```bash
-# Install the package
-pip install .
-
-# Run the interactive CLI
-strava-to-trainingpeaks
-```
-
-The CLI will guide you through:
-1. Selecting your sport (running, cycling, swimming, other)
-2. Downloading from Strava or providing a local TCX file
-3. Optional AI analysis of your training session
-4. Optional audio summary generation
-5. Formatted TCX file ready for TrainingPeaks upload
-
-### Coach Mode
-
-```bash
-# Set up OAuth credentials (one-time setup)
-export STRAVA_CLIENT_ID=your_client_id
-export STRAVA_CLIENT_SECRET=your_client_secret
-
-# Run coach mode
-strava-coach-mode
-```
-
-See [Coach Mode Documentation](docs/coach_mode.md) for complete setup instructions.
-
-## Installation
-
-### Prerequisites
-
-- Python 3.12 or higher
-- pip package manager
-- Strava account (logged in on your browser for downloads)
-- Optional: OpenAI API key (for AI analysis features)
-
-### Standard Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Lucs1590/strava-to-trainingpeaks
+git clone https://github.com/MauroDruwel/strava-to-trainingpeaks.git
 cd strava-to-trainingpeaks
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the package
-pip install .
+# Using virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
-### Alternative Installation Methods
+### 2. Configure Environment
 
-#### Using Interactive Setup Script
+Copy `.env.example` to `.env` and configure your credentials:
 
 ```bash
-python interactive_setup.py
+cp .env.example .env
 ```
 
-Follow the prompts to choose between:
-- Global installation
-- Virtual environment
-- Docker container
+Minimal `.env` for automated sync:
 
-#### Docker Installation
+```env
+STRAVA_CLIENT_ID=123456
+STRAVA_CLIENT_SECRET=abcdef1234567890abcdef1234567890
+
+# AI Configuration (Ollama example)
+AI_ENABLED=true
+AI_BASE_URL=http://localhost:11434/v1
+AI_MODEL=llama3.2
+AI_API_KEY=ollama
+AI_LANGUAGE=English
+
+# Sync options
+SYNC_OUTPUT_DIR=./synced_activities
+SYNC_LIMIT=10
+SYNC_AUTO_ANALYZE=true
+```
+
+### 3. One-Time Strava Authorization
+
+Run the auth command to authorize your Strava account:
 
 ```bash
-# Build the image
+strava-sync auth
+```
+
+A browser window will open for you to grant read access. Once completed, your credentials are saved in `.strava_tokens.json`.
+
+*(Optional for headless servers)*: You can copy the generated `refresh_token` into `STRAVA_REFRESH_TOKEN` in your `.env`, and your server will never need a browser or interactive prompt again!
+
+---
+
+## 🔄 Automation & Cronjob Setup
+
+### Option 1: System Crontab (One-Shot)
+
+Run a sync pass every hour using Linux crontab:
+
+```bash
+# Open crontab editor
+crontab -e
+
+# Add sync job to run every hour at minute 0:
+0 * * * * cd /path/to/strava-to-trainingpeaks && .venv/bin/strava-sync sync --once >> cron_sync.log 2>&1
+```
+
+### Option 2: Built-in Daemon Mode
+
+Run continuously in the background (sleeps between checks):
+
+```bash
+# Check every hour (3600 seconds)
+strava-sync sync --daemon --interval 3600
+```
+
+### Option 3: Docker Container
+
+Build and run as a lightweight container:
+
+```bash
 docker build -t strava-to-trainingpeaks .
-
-# Run the container
-docker run -it --rm strava-to-trainingpeaks
+docker run -d \
+  --name strava-sync \
+  --restart unless-stopped \
+  --env-file .env \
+  -v $(pwd)/synced_activities:/app/synced_activities \
+  strava-to-trainingpeaks
 ```
 
-## Configuration
+---
 
-### AI Analysis Setup (Optional)
+## 🤖 Universal OpenAI-Compatible AI Coaching
 
-To enable AI-powered training analysis:
+The AI analysis engine works with any OpenAI-compatible provider:
 
-1. Get an OpenAI API key from [OpenAI Platform](https://platform.openai.com/)
-2. Set the environment variable:
+| Provider | `AI_BASE_URL` | `AI_MODEL` | `AI_API_KEY` |
+| :--- | :--- | :--- | :--- |
+| **Local Ollama** | `http://localhost:11434/v1` | `llama3.2` | `ollama` |
+| **Local LM Studio** | `http://localhost:1234/v1` | `model-identifier` | `lm-studio` |
+| **OpenRouter** | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.2-3b-instruct` | `sk-or-v1-...` |
+| **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` | `sk-...` |
+| **Groq** | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | `gsk_...` |
+| **OpenAI** | *(omit or standard)* | `gpt-4o-mini` | `sk-proj-...` |
+
+When enabled (`SYNC_AUTO_ANALYZE=true`), an AI performance analysis is generated and saved as a markdown file alongside each downloaded TCX (e.g., `2026-09-22_Run_Morning_12345_analysis.md`).
+
+---
+
+## 💻 CLI Commands
+
+The CLI provides intuitive subcommands:
 
 ```bash
-export OPENAI_API_KEY=your_api_key_here
+# Run one-shot sync (default)
+strava-sync sync --once
+
+# Run sync in daemon mode
+strava-sync sync --daemon --interval 1800
+
+# Dry run: check what would be synced without saving files
+strava-sync sync --dry-run
+
+# Check system status, token health, and sync history
+strava-sync status
+
+# Authorize an athlete
+strava-sync auth --name "Mauro"
+
+# Run AI analysis on an existing TCX file
+strava-sync analyze ./assets/run.tcx --sport Run --plan "Zone 2 base building"
+
+# Launch the interactive questionnaire wizard
+strava-sync interactive
+
+# Launch coach multi-athlete manager
+strava-sync coach
 ```
 
-Or create a `.env` file:
+---
+
+## 🏗️ Project Architecture
+
+```
+strava-to-trainingpeaks/
+├── src/
+│   ├── config.py             # Unified settings & .env loading
+│   ├── models.py             # Data classes (Sport, AthleteToken, ActivitySummary)
+│   ├── cli.py                # Command-line interface & subcommands
+│   ├── strava/
+│   │   ├── oauth.py          # OAuth2 flow & token storage
+│   │   └── api.py            # Strava REST API client & streams fetcher
+│   ├── tcx/
+│   │   ├── builder.py        # Converts Strava telemetry streams to TCX XML
+│   │   ├── formatter.py      # TCX validation & TrainingPeaks formatting
+│   │   └── processor.py      # Trackpoint dataframe processing & Euclidean filtering
+│   ├── ai/
+│   │   ├── analyzer.py       # Universal OpenAI-compatible training analyzer
+│   │   └── tts.py            # Optional text-to-speech audio generator
+│   └── sync/
+│       ├── engine.py         # Automation engine (download, format, analyze, dispatch)
+│       ├── state.py          # Atomic JSON state persistence (.sync_state.json)
+│       ├── scheduler.py      # Daemon & cron loop runner
+│       └── email.py          # Optional TrainingPeaks email attachment uploader
+├── tests/                    # 149 comprehensive unit tests
+├── Dockerfile                # Production Docker container for daemon sync
+├── Makefile                  # Developer commands (make test, make sync, etc.)
+└── .env.example              # Documented configuration template
+```
+
+---
+
+## 🧪 Running Tests
+
+Run the full test suite using `pytest`:
 
 ```bash
-OPENAI_API_KEY=your_api_key_here
+# Run all tests
+pytest -v
+
+# Or use the Makefile
+make test
+
+# Run tests with coverage
+make test-cov
 ```
 
-### Coach Mode Setup
+---
 
-See the [Coach Mode Documentation](docs/coach_mode.md) for detailed OAuth setup instructions.
+## 📜 License
 
-## Advanced Features
-
-### AI Training Analysis
-
-The tool can analyze your training sessions using advanced language models:
-
-- **Performance Metrics**: Detailed analysis of pace, heart rate zones, power output, and cadence
-- **Physiological Analysis**: Insights into cardiovascular efficiency and energy systems
-- **Strengths & Weaknesses**: Identify what you're doing well and areas for improvement
-- **Training Plan Comparison**: Compare actual performance against planned workouts
-
-Example workflow:
-```bash
-strava-to-trainingpeaks
-# Select sport → Download activity → Enable AI analysis → Answer prompts
-```
-
-### Audio Summaries
-
-Generate spoken summaries of your training analysis:
-
-- Uses OpenAI's text-to-speech technology
-- Automatically removes markdown formatting
-- Saves MP3 files to your Downloads folder
-- Perfect for reviewing while cooling down or commuting
-
-### Building an Executable
-
-Package the application into a standalone executable:
-
-```bash
-python exec_setup.py build
-```
-
-The executable will be created in the `build/` directory.
-
-## How It Works
-
-### Personal Mode Workflow
-
-1. **Sport Selection**: Choose your activity type (running, cycling, swimming, or other)
-2. **Data Source**: Download from Strava (by activity ID) or provide a local TCX file
-3. **Processing**: The tool formats and validates the TCX file for TrainingPeaks
-4. **AI Analysis** (optional): Get detailed performance insights
-5. **Audio Summary** (optional): Generate a spoken analysis
-6. **Output**: Receive a formatted TCX file ready for TrainingPeaks upload
-
-### Coach Mode Workflow
-
-1. **Setup**: Configure Strava OAuth credentials (one-time)
-2. **Athlete Authorization**: Athletes grant access through secure OAuth flow
-3. **Manage Athletes**: View all authorized athletes and their token status
-4. **Sync Activities**: Download any athlete's activities using their tokens
-5. **Batch Processing**: Process multiple athletes' data efficiently
-
-## Resources & Links
-
-### Articles & Tutorials
-- 📖 [Strava to Training Peaks - Complete Guide](https://medium.com/p/fa3a0fa05f79)
-- 🤖 [AI-Powered Training Analysis with LLM Integration](https://levelup.gitconnected.com/llm-to-strava-intelligent-training-analysis-with-ai-co-coaching-03f1cf866597)
-- 🎥 [Video: Manual Export from Strava to TrainingPeaks](https://www.youtube.com/watch?v=Y0nWzOAM8_M)
-
-### Documentation
-- [Coach Mode Setup Guide](docs/coach_mode.md)
-- [Strava API Documentation](https://developers.strava.com/docs/)
-- [TrainingPeaks Import Guide](https://help.trainingpeaks.com/hc/en-us/articles/360014889633-Uploading-Activities)
-
-### Project Information
-- **Author**: [Lucas Brito](https://lucasbrito.com.br/)
-- **Repository**: [github.com/Lucs1590/strava-to-trainingpeaks](https://github.com/Lucs1590/strava-to-trainingpeaks)
-- **License**: MIT License - see [LICENSE](LICENSE) file
-
-## Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'feat: add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-### Development Setup
-
-```bash
-# Install development dependencies
-pip install -r requirements.txt
-
-# Run tests
-python -m unittest discover -s tests -v
-
-# Run with coverage
-pytest --cov --junitxml=junit.xml
-```
-
-## Support
-
-If you find this project helpful, please consider:
-- ⭐ Starring the repository
-- 📢 Sharing it with your training community
-- 🐛 Reporting bugs or suggesting features via [Issues](https://github.com/Lucs1590/strava-to-trainingpeaks/issues)
-- 💡 Contributing code improvements
-
-## Acknowledgments
-
-Special thanks to the open-source community and all contributors who have helped improve this project.
+MIT License — see the [LICENSE](LICENSE) file for details.
