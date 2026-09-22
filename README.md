@@ -225,7 +225,7 @@ trainingpeaks-sync/
 │       ├── state.py              # Atomic JSON state persistence (.sync_state.json)
 │       ├── scheduler.py          # Cron & daemon loops
 │       └── email.py              # TrainingPeaks SMTP uploader
-├── tests/                        # 165 comprehensive unit tests
+├── tests/                        # 171 comprehensive unit tests
 ├── pyproject.toml                # Modern Python packaging & tool configuration
 ├── Dockerfile                    # Background daemon container
 ├── Makefile                      # Developer targets (make test, make sync, etc.)
