@@ -16,8 +16,12 @@ import questionary
 
 from tqdm import tqdm
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts.prompt import PromptTemplate
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.prompts.prompt import PromptTemplate
+except ImportError:
+    ChatOpenAI = None
+    PromptTemplate = None
 from defusedxml.minidom import parseString
 from scipy.spatial.distance import squareform, pdist
 from tcxreader.tcxreader import TCXReader
@@ -363,25 +367,41 @@ class TCXProcessor:
         prompt_template = self._get_analysis_prompt_template(
             config.training_plan
         )
-        prompt = PromptTemplate.from_template(prompt_template).format(
-            sport=sport.value,
-            training_data=processed_data.to_csv(index=False),
-            language=config.language,
-            plan=config.training_plan
-        )
-
-        llm = ChatOpenAI(
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
-            model="gpt-5-mini",
-            output_version="responses/v1",
-            reasoning={"effort": "minimal"},
-            model_kwargs={"text": {"verbosity": "high"}},
-            max_retries=8,
-            timeout=120
-        )
-
-        response = llm.invoke(prompt)
-        return response.content[1]['text']
+        if PromptTemplate is not None and ChatOpenAI is not None:
+            prompt = PromptTemplate.from_template(prompt_template).format(
+                sport=sport.value,
+                training_data=processed_data.to_csv(index=False),
+                language=config.language,
+                plan=config.training_plan
+            )
+            llm = ChatOpenAI(
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                model="gpt-5-mini",
+                output_version="responses/v1",
+                reasoning={"effort": "minimal"},
+                model_kwargs={"text": {"verbosity": "high"}},
+                max_retries=8,
+                timeout=120
+            )
+            response = llm.invoke(prompt)
+            return response.content[1]['text']
+        else:
+            prompt = (
+                prompt_template
+                .replace("{sport}", sport.value)
+                .replace("{training_data}", processed_data.to_csv(index=False))
+                .replace("{language}", config.language)
+                .replace("{plan}", str(config.training_plan))
+            )
+            client = openai.OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY", "dummy"),
+                base_url=os.getenv("OPENAI_BASE_URL"),
+            )
+            resp = client.chat.completions.create(
+                model=os.getenv("AI_MODEL", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return resp.choices[0].message.content or ""
 
     def _get_analysis_prompt_template(self, has_plan: bool) -> str:
         """Get the prompt template for analysis."""

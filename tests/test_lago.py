@@ -96,6 +96,65 @@ Ticket: 112233
             if tmp_path.exists():
                 tmp_path.unlink()
 
+    def test_ignore_trainingpeaks_system_email(self):
+        msg = EmailMessage()
+        msg["Subject"] = "Welcome Athlete, You're Now a TrainingPeaks Athlete!"
+        msg["From"] = "info@email.trainingpeaks.com"
+        msg["To"] = "swimming@maurodruwel.be"
+        msg.set_content("Welcome to TrainingPeaks, Mauro!")
+
+        reservation = LagoEmailParser.parse_email_message(msg)
+        self.assertIsNone(reservation)
+
+    def test_parse_forwarded_lago_email_with_pdf_attachment(self):
+        import zlib
+        msg = EmailMessage()
+        msg["Subject"] = "Fwd: Dank je wel voor je aankoop!"
+        msg["From"] = "Mauro Druwel <mauro.druwel@gmail.com>"
+        msg["To"] = "swimming@maurodruwel.be"
+        msg.set_content("""
+Ingelmunster
+---------- Forwarded message ---------
+Van: <kortrijkweide@lago.be>
+Subject: Dank je wel voor je aankoop!
+[image: barcode] 89209761305197092000
+LAGO Kortrijk Weide: tickets sportbad
+""")
+        # Create a synthetic PDF payload with compressed stream
+        stream_content = b"""
+BT
+/FAAAAJ 9 Tf
+[(LAGO Kortrijk W)-1(eid)1(e)-1(: t)1(icke)-1(ts)1( )-1(s)1(portb)1(ad)] TJ
+ET
+BT
+/FAAABE 9 Tf
+[(Rese)1(rv)1(ati)-1(enummer)1(:)-2206(217)1(23594)] TJ
+ET
+BT
+/FAAABE 9 Tf
+[(Datu)-1(m)1( z)-1(w)1(embeurt:)-2353(22-9-20)1(26 08:)1(30:0)1(0)] TJ
+ET
+"""
+        compressed = zlib.compress(stream_content)
+        pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Length 123 >>\nstream\r\n" + compressed + b"\r\nendstream\nendobj\n%%EOF"
+
+        msg.add_attachment(
+            pdf_bytes,
+            maintype="application",
+            subtype="pdf",
+            filename="Reserveringsbewijs.pdf"
+        )
+
+        reservation = LagoEmailParser.parse_email_message(msg)
+        self.assertIsNotNone(reservation)
+        self.assertEqual(reservation.reservation_id, "21723594")
+        self.assertEqual(reservation.facility, "LAGO Kortrijk Weide")
+        self.assertEqual(reservation.start_time.date(), date(2026, 9, 22))
+        self.assertEqual(reservation.start_time.hour, 8)
+        self.assertEqual(reservation.start_time.minute, 30)
+        self.assertEqual(reservation.duration_seconds, 3600)
+        self.assertEqual(reservation.raw_details.get("barcode"), "89209761305197092000")
+
 
 class TestLagoIMAPClient(unittest.TestCase):
     """Test IMAP fetching and offline sample directory."""

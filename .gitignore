@@ -3,6 +3,8 @@
 
 # Strava OAuth tokens (sensitive data)
 .strava_tokens.json
+.sync_state.json
+synced_activities/
 
 # Log files
 *.log
