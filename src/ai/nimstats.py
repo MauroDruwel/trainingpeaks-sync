@@ -87,7 +87,7 @@ class NIMStatsClient:
             if now - cached_time < self.cache_ttl_seconds:
                 return cached_model, cached_info
 
-        url = f"{self.base_url}/top/{endpoint_slug}.json"
+        url = f"{self.base_url}/top/{endpoint_slug}"
         try:
             req = urllib.request.Request(
                 url,
@@ -96,7 +96,24 @@ class NIMStatsClient:
                     "Accept": "application/json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            try:
+                resp_ctx = urllib.request.urlopen(req, timeout=timeout)
+            except urllib.error.HTTPError as http_err:
+                if http_err.code == 404 and not endpoint_slug.endswith(".json"):
+                    # Fallback to explicit .json extension if server doesn't auto-route
+                    fallback_url = f"{self.base_url}/top/{endpoint_slug}.json"
+                    fallback_req = urllib.request.Request(
+                        fallback_url,
+                        headers={
+                            "User-Agent": self.user_agent,
+                            "Accept": "application/json",
+                        },
+                    )
+                    resp_ctx = urllib.request.urlopen(fallback_req, timeout=timeout)
+                else:
+                    raise
+
+            with resp_ctx as resp:
                 data = json.loads(resp.read().decode("utf-8"))
 
             best_model = data.get("best_model")

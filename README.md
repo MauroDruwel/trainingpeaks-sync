@@ -173,7 +173,7 @@ When set to `auto` (default), the engine queries the live NIMStats API for the h
 ```
 ┌─────────────────────────────────┐
 │ https://nimstats.maurodruwel.be │
-│ /top/intelligence.json          │
+│ /top/intelligence               │
 └────────────────┬────────────────┘
                  │ Dynamic best model retrieval
                  ▼
