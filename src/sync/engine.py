@@ -239,7 +239,7 @@ class SyncEngine:
 
             # TCX post-processing
             if workout.sport in (Sport.SWIM, Sport.OTHER):
-                format_swim_tcx(str(tcx_path))
+                format_swim_tcx(str(tcx_path), target_duration_seconds=workout.duration_seconds)
             format_xml_file(str(tcx_path))
 
             # Validation

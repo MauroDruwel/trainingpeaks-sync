@@ -58,7 +58,8 @@ class TestWorkoutReconciler(unittest.TestCase):
         self.assertIn("lago", w.sources)
         self.assertIn("studentapp", w.sources)
         self.assertEqual(w.distance_meters, 2500)
-        self.assertEqual(w.duration_seconds, 3600)  # Strava recorded duration takes precedence!
+        self.assertEqual(w.duration_seconds, 5400)  # Preserves full slot duration (5400s) even when watch recorded 3600s!
+        self.assertIn("Full slot preserved", w.description)
         self.assertIn("LAGO-100", w.description)
         self.assertIn("STUD-200", w.description)
 
@@ -118,3 +119,44 @@ class TestWorkoutReconciler(unittest.TestCase):
         self.assertEqual(workouts[0].sources, ["strava"])
         self.assertTrue(workouts[0].has_watch_data)
         self.assertEqual(workouts[0].sport, Sport.RUN)
+
+    def test_reconcile_swim_preserves_full_slot_when_strava_cuts_off_time(self):
+        # Strava recorded 45 mins (2700s) due to pool resting intervals, but default slot is 1h45m (6300s)
+        strava_swim = ActivitySummary(
+            id=5555,
+            name="Afternoon Laps",
+            sport=Sport.SWIM,
+            strava_type="Swim",
+            start_date="2026-09-22T14:00:00Z",
+            distance_meters=2000,
+            elapsed_time_seconds=2700,
+            moving_time_seconds=2400,
+        )
+
+        reconciler = WorkoutReconciler(FusionConfig(synthetic_swim_duration_seconds=6300))
+        workouts = reconciler.reconcile([strava_swim], [], [])
+
+        self.assertEqual(len(workouts), 1)
+        w = workouts[0]
+        self.assertEqual(w.duration_seconds, 6300)  # Preserved full 1h45m slot!
+        self.assertIn("Full slot preserved", w.description)
+
+    def test_reconcile_swim_longer_than_slot_keeps_longer_time(self):
+        # Athlete swam 2 hours (7200s), which is longer than the 1h45m (6300s) slot
+        strava_swim = ActivitySummary(
+            id=6666,
+            name="Endurance Swim",
+            sport=Sport.SWIM,
+            strava_type="Swim",
+            start_date="2026-09-22T14:00:00Z",
+            distance_meters=4500,
+            elapsed_time_seconds=7200,
+            moving_time_seconds=6800,
+        )
+
+        reconciler = WorkoutReconciler(FusionConfig(synthetic_swim_duration_seconds=6300))
+        workouts = reconciler.reconcile([strava_swim], [], [])
+
+        self.assertEqual(len(workouts), 1)
+        w = workouts[0]
+        self.assertEqual(w.duration_seconds, 7200)  # Keeps full 2h!

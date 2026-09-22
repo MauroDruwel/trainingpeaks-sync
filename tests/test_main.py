@@ -118,6 +118,25 @@ class TestMain(unittest.TestCase):
             self.assertIn('<Activity Sport="Other">', args)
             self.assertIn("<Value>123</Value>", args)
 
+    def test_format_swim_tcx_extends_duration_to_full_slot(self):
+        from src.tcx.formatter import format_swim_tcx
+        xml = (
+            '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">'
+            '<Activities><Activity Sport="Swim"><Id>2026-09-22T08:30:00Z</Id>'
+            '<Lap StartTime="2026-09-22T08:30:00Z">'
+            '<TotalTimeSeconds>2700.0</TotalTimeSeconds>'
+            '<DistanceMeters>2000.0</DistanceMeters>'
+            '<Track><Trackpoint><Time>2026-09-22T08:30:00Z</Time><DistanceMeters>0.0</DistanceMeters></Trackpoint>'
+            '<Trackpoint><Time>2026-09-22T09:15:00Z</Time><DistanceMeters>2000.0</DistanceMeters></Trackpoint></Track>'
+            '</Lap></Activity></Activities></TrainingCenterDatabase>'
+        )
+        with patch("src.tcx.formatter.read_xml_file", return_value=xml), \
+                patch("src.tcx.formatter.write_xml_file") as mock_write:
+            format_swim_tcx("test.tcx", target_duration_seconds=6300)
+            written = mock_write.call_args[0][1]
+            self.assertIn('<TotalTimeSeconds>6300.0</TotalTimeSeconds>', written)
+            self.assertIn('2026-09-22T10:15:00Z', written)
+
     def test_main_invokes_processor_run(self):
         with patch.object(main_module, "TCXProcessor") as mock_processor_cls:
             mock_instance = mock_processor_cls.return_value

@@ -74,6 +74,24 @@ class WorkoutReconciler:
             elif matching_student:
                 facility_name = matching_student.facility
 
+            # Calculate duration:
+            # When resting in the pool, Strava often cuts off time or auto-pauses.
+            # We preserve the full session slot (from matched LAGO/StudentApp booking
+            # or default 1h45m / 6300s), ensuring the athlete gets credited for the full slot.
+            if strava_act.sport == Sport.SWIM:
+                slot_duration = (
+                    matching_lago.duration_seconds
+                    if matching_lago and matching_lago.duration_seconds
+                    else (
+                        matching_student.duration_seconds
+                        if matching_student and matching_student.duration_seconds
+                        else self.config.synthetic_swim_duration_seconds
+                    )
+                )
+                duration_sec = max(strava_act.elapsed_time_seconds, slot_duration)
+            else:
+                duration_sec = strava_act.elapsed_time_seconds
+
             title = strava_act.name
             if strava_act.sport == Sport.SWIM and facility_name:
                 title = f"🏊 Swim: {facility_name}"
@@ -84,6 +102,13 @@ class WorkoutReconciler:
                 f"• Verified Sources: {', '.join(s.upper() for s in sources)}",
                 f"• Watch Telemetry: Recorded (Distance: {strava_act.distance_meters/1000:.2f} km)",
             ]
+            if strava_act.sport == Sport.SWIM and duration_sec > strava_act.elapsed_time_seconds:
+                desc_lines.append(
+                    f"• Duration: {duration_sec // 60} mins (Full slot preserved; watch recorded: {strava_act.elapsed_time_seconds // 60} mins)"
+                )
+            elif strava_act.sport == Sport.SWIM:
+                desc_lines.append(f"• Duration: {duration_sec // 60} mins")
+
             if matching_lago:
                 desc_lines.append(f"• LAGO Reservation: #{matching_lago.reservation_id} ({matching_lago.facility})")
             if matching_student:
@@ -93,7 +118,7 @@ class WorkoutReconciler:
                 session_id=f"fused_strava_{strava_act.id}",
                 sport=strava_act.sport,
                 start_time=act_time,
-                duration_seconds=strava_act.elapsed_time_seconds,
+                duration_seconds=duration_sec,
                 distance_meters=strava_act.distance_meters,
                 sources=sources,
                 has_watch_data=True,
