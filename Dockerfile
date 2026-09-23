@@ -30,4 +30,4 @@ USER appuser
 
 VOLUME ["/app/synced_activities"]
 
-CMD ["strava-sync", "sync", "--daemon"]
+CMD ["tp-sync", "sync", "--daemon"]
