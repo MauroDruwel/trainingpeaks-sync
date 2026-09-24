@@ -93,6 +93,7 @@ class SyncEngine:
         limit: Optional[int] = None,
         dry_run: bool = False,
         force_ai: Optional[bool] = None,
+        force: bool = False,
     ) -> SyncBatchSummary:
         """
         Execute automated multi-source synchronization.
@@ -162,14 +163,15 @@ class SyncEngine:
                     continue
 
             # Idempotency check: check both session_id and strava id
-            already_synced = self.state_manager.is_synced(workout.session_id)
-            if not already_synced and workout.strava_activity:
-                already_synced = self.state_manager.is_synced(workout.strava_activity.id)
+            if not force:
+                already_synced = self.state_manager.is_synced(workout.session_id)
+                if not already_synced and workout.strava_activity:
+                    already_synced = self.state_manager.is_synced(workout.strava_activity.id)
 
-            if already_synced:
-                logger.debug("Workout %s already synced, skipping.", workout.session_id)
-                batch_summary.already_synced += 1
-                continue
+                if already_synced:
+                    logger.debug("Workout %s already synced, skipping.", workout.session_id)
+                    batch_summary.already_synced += 1
+                    continue
 
             sources_label = "+".join(workout.sources).upper()
             logger.info("Processing workout: [%s] %s (Sources: %s)", workout.session_id, workout.title, sources_label)

@@ -83,3 +83,19 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(app_cfg.sync.limit, 25)
             self.assertTrue(app_cfg.sync.auto_analyze)
             self.assertEqual(str(app_cfg.sync.output_dir), "/tmp/custom_sync")
+
+    def test_sync_config_smtp_fallback_from_lago(self):
+        env_vars = {
+            "LAGO_IMAP_SERVER": "mailserver.maurodruwel.be",
+            "LAGO_IMAP_USER": "sports@maurodruwel.be",
+            "LAGO_IMAP_PASSWORD": "supersecretpassword",
+            "TP_EMAIL": "athlete.upload@trainingpeaks.com",
+        }
+        with patch.dict(os.environ, env_vars, clear=True):
+            app_cfg = AppConfig.load()
+            self.assertTrue(app_cfg.sync.is_email_upload_configured)
+            self.assertEqual(app_cfg.sync.smtp_host, "mailserver.maurodruwel.be")
+            self.assertEqual(app_cfg.sync.smtp_user, "sports@maurodruwel.be")
+            self.assertEqual(app_cfg.sync.smtp_password, "supersecretpassword")
+            self.assertEqual(app_cfg.sync.smtp_from, "sports@maurodruwel.be")
+            self.assertEqual(app_cfg.sync.tp_email, "athlete.upload@trainingpeaks.com")

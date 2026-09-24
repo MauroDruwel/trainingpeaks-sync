@@ -38,6 +38,7 @@ class SyncScheduler:
         limit: Optional[int] = None,
         dry_run: bool = False,
         force_ai: Optional[bool] = None,
+        force: bool = False,
     ) -> SyncBatchSummary:
         """Execute a single sync run (ideal for crontab)."""
         logger.info("Running single sync job...")
@@ -46,6 +47,7 @@ class SyncScheduler:
             limit=limit,
             dry_run=dry_run,
             force_ai=force_ai,
+            force=force,
         )
         logger.info(
             "Sync run completed. %d newly synced, %d already synced, %d failed.",

@@ -26,6 +26,24 @@ class TestSyncScheduler(unittest.TestCase):
             limit=10,
             dry_run=False,
             force_ai=True,
+            force=False,
+        )
+
+    def test_run_once_force(self):
+        mock_engine = MagicMock()
+        mock_summary = SyncBatchSummary(total_found=5, newly_synced=5, already_synced=0)
+        mock_engine.sync.return_value = mock_summary
+
+        scheduler = SyncScheduler(engine=mock_engine)
+        result = scheduler.run_once(athlete_id=123, limit=10, dry_run=False, force_ai=True, force=True)
+
+        self.assertEqual(result, mock_summary)
+        mock_engine.sync.assert_called_once_with(
+            athlete_id=123,
+            limit=10,
+            dry_run=False,
+            force_ai=True,
+            force=True,
         )
 
     def test_run_daemon_stops_on_signal(self):

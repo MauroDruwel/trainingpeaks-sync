@@ -16,6 +16,7 @@ from .sources.studentapp import StudentAppParser, StudentAppClient
 from .sync.engine import SyncEngine
 from .sync.scheduler import SyncScheduler
 from .sync.state import SyncStateManager
+from .sync.email import TrainingPeaksEmailUploader
 from .ai.analyzer import AIAnalyzer
 from .ai.tts import TTSGenerator
 from .tcx.formatter import validate_tcx_file
@@ -99,6 +100,11 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory to save downloaded TCX files and analysis reports",
     )
+    sync_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-sync and re-upload of activities even if previously recorded in state",
+    )
 
     # --- LAGO command ---
     lago_parser = subparsers.add_parser("lago", help="Check and inspect LAGO swimming reservation emails")
@@ -135,6 +141,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     # --- Status command ---
     subparsers.add_parser("status", help="Show system configuration, token health, and sync history")
+
+    # --- Test-Email command ---
+    subparsers.add_parser("test-email", help="Verify SMTP connection and TrainingPeaks email upload configuration")
 
     # --- Analyze command ---
     analyze_parser = subparsers.add_parser("analyze", help="Run AI analysis on an existing TCX file")
@@ -220,6 +229,7 @@ def cmd_sync(args: argparse.Namespace, config: AppConfig) -> int:
         limit=args.limit,
         dry_run=args.dry_run,
         force_ai=args.ai,
+        force=getattr(args, "force", False),
     )
 
     print("\n" + "=" * 55)
@@ -411,12 +421,37 @@ def cmd_status(config: AppConfig) -> int:
     print(f"  • Last Sync: {state_mgr.get_last_sync() or 'Never'}")
     print(f"  • Total Synced Activities: {state_mgr.get_total_synced_count()}")
     if config.sync.is_email_upload_configured:
-        print(f"  • Email Direct Upload: ✅ Configured -> {config.sync.tp_email}")
+        print(f"  • Email Direct Upload: ✅ Configured -> {config.sync.tp_email} (via {config.sync.smtp_host}:{config.sync.smtp_port})")
     else:
-        print("  • Email Direct Upload: ⚪ Not configured (manual file drop or set TP_EMAIL & SMTP_*)")
+        if not config.sync.tp_email:
+            print("  • Email Direct Upload: ⚪ TP_EMAIL not configured (set TP_EMAIL=username.upload@trainingpeaks.com)")
+        else:
+            print(f"  • Email Direct Upload: ⚪ TP_EMAIL set ({config.sync.tp_email}) but SMTP incomplete (check SMTP_HOST / LAGO_IMAP_SERVER)")
 
     print("\n" + "=" * 60 + "\n")
     return 0
+
+
+def cmd_test_email(args: argparse.Namespace, config: AppConfig) -> int:
+    """Test SMTP connection and TrainingPeaks email upload readiness."""
+    print("\n📧 TrainingPeaks Email Upload Diagnostic")
+    print("-" * 55)
+    print(f"  • TrainingPeaks Upload Email : {config.sync.tp_email or '❌ Not set (TP_EMAIL)'}")
+    print(f"  • SMTP Host                  : {config.sync.smtp_host or '❌ Not set (SMTP_HOST)'}")
+    print(f"  • SMTP Port                  : {config.sync.smtp_port}")
+    print(f"  • SMTP Username              : {config.sync.smtp_user or '❌ Not set (SMTP_USER)'}")
+    print(f"  • SMTP From Address          : {config.sync.smtp_from or '❌ Not set (SMTP_FROM)'}")
+    print("-" * 55)
+
+    uploader = TrainingPeaksEmailUploader(config.sync)
+    success, msg = uploader.test_connection()
+    if success:
+        print(f"✅ {msg}")
+        print("🎉 Ready to automatically email TCX workout files directly into TrainingPeaks!\n")
+        return 0
+    else:
+        print(f"❌ {msg}\n")
+        return 1
 
 
 def cmd_nimstats(args: argparse.Namespace, config: AppConfig) -> int:
@@ -526,6 +561,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_auth(args, config)
     elif args.command == "status":
         return cmd_status(config)
+    elif args.command == "test-email":
+        return cmd_test_email(args, config)
     elif args.command == "nimstats":
         return cmd_nimstats(args, config)
     elif args.command == "analyze":

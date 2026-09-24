@@ -24,6 +24,32 @@ class TrainingPeaksEmailUploader:
         """Check if email upload is properly configured."""
         return self.config.is_email_upload_configured
 
+    def test_connection(self) -> tuple[bool, str]:
+        """Test SMTP connection and authentication."""
+        if not self.can_send():
+            if not self.config.tp_email:
+                return False, "TP_EMAIL is not set. Please set TP_EMAIL in your .env file."
+            missing = []
+            if not self.config.smtp_host:
+                missing.append("SMTP_HOST")
+            if not self.config.smtp_user:
+                missing.append("SMTP_USER")
+            if not self.config.smtp_password:
+                missing.append("SMTP_PASSWORD")
+            return False, f"Missing SMTP settings: {', '.join(missing)}"
+
+        try:
+            if self.config.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port, timeout=15) as server:
+                    server.login(self.config.smtp_user, self.config.smtp_password)
+            else:
+                with smtplib.SMTP(self.config.smtp_host, self.config.smtp_port, timeout=15) as server:
+                    server.starttls()
+                    server.login(self.config.smtp_user, self.config.smtp_password)
+            return True, f"Successfully authenticated to SMTP server {self.config.smtp_host}:{self.config.smtp_port} as {self.config.smtp_user}."
+        except Exception as err:
+            return False, f"SMTP authentication failed: {err}"
+
     def send_tcx(self, tcx_path: Path, subject: Optional[str] = None) -> bool:
         """Send TCX file as an attachment via SMTP."""
         if not self.can_send():
@@ -51,10 +77,15 @@ class TrainingPeaksEmailUploader:
                     filename=tcx_path.name,
                 )
 
-            with smtplib.SMTP(self.config.smtp_host, self.config.smtp_port, timeout=30) as server:
-                server.starttls()
-                server.login(self.config.smtp_user, self.config.smtp_password)
-                server.send_message(msg)
+            if self.config.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port, timeout=30) as server:
+                    server.login(self.config.smtp_user, self.config.smtp_password)
+                    server.send_message(msg)
+            else:
+                with smtplib.SMTP(self.config.smtp_host, self.config.smtp_port, timeout=30) as server:
+                    server.starttls()
+                    server.login(self.config.smtp_user, self.config.smtp_password)
+                    server.send_message(msg)
 
             logger.info("Successfully emailed %s to TrainingPeaks (%s)", tcx_path.name, self.config.tp_email)
             return True

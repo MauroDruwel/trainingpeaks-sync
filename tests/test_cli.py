@@ -141,3 +141,29 @@ class TestCLI(unittest.TestCase):
              patch("builtins.print"):
             exit_code = main(["nimstats", "--strategy", "intelligence"])
             self.assertEqual(exit_code, 0)
+
+    def test_cmd_sync_force(self):
+        config = AppConfig()
+        parser = create_parser()
+        args = parser.parse_args(["sync", "--force"])
+        self.assertTrue(args.force)
+
+        with patch("src.cli.SyncScheduler") as mock_sched_cls, \
+             patch("builtins.print"):
+            mock_sched = mock_sched_cls.return_value
+            mock_sched.run_once.return_value = SyncBatchSummary(total_found=1, newly_synced=1)
+            exit_code = cmd_sync(args, config)
+            self.assertEqual(exit_code, 0)
+            mock_sched.run_once.assert_called_once_with(
+                athlete_id=None,
+                limit=None,
+                dry_run=False,
+                force_ai=None,
+                force=True,
+            )
+
+    def test_cmd_test_email(self):
+        with patch("src.cli.TrainingPeaksEmailUploader.test_connection", return_value=(True, "Success")), \
+             patch("builtins.print"):
+            exit_code = main(["test-email"])
+            self.assertEqual(exit_code, 0)

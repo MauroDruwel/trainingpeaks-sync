@@ -120,6 +120,12 @@ class TestSyncEngine(unittest.TestCase):
             self.assertEqual(summary2.newly_synced, 0)
             self.assertEqual(summary2.already_synced, 2)
 
+            # Third run with force=True: should re-sync despite existing state!
+            summary3 = engine.sync(force=True)
+            self.assertEqual(summary3.total_found, 2)
+            self.assertEqual(summary3.newly_synced, 2)
+            self.assertEqual(summary3.already_synced, 0)
+
     def test_sync_dry_run(self):
         mock_oauth = MagicMock()
         mock_token = AthleteToken(777, "Mauro", "tok", "ref", 9999999999)

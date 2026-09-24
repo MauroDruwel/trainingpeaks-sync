@@ -373,6 +373,12 @@ class AppConfig:
         except ValueError:
             smtp_port = 587
 
+        # SMTP settings with smart fallback to LAGO mail server if available
+        smtp_host = os.getenv("SMTP_HOST") or lago_server
+        smtp_user = os.getenv("SMTP_USER") or lago_user
+        smtp_password = os.getenv("SMTP_PASSWORD") or lago_pass
+        smtp_from = os.getenv("SMTP_FROM") or smtp_user
+
         sync = SyncConfig(
             output_dir=Path(output_dir_str),
             state_file=Path(state_file_str),
@@ -382,11 +388,11 @@ class AppConfig:
             save_analysis_file=save_analysis,
             sport_filter=os.getenv("SYNC_SPORT_FILTER"),
             tp_email=os.getenv("TP_EMAIL") or os.getenv("TRAININGPEAKS_EMAIL"),
-            smtp_host=os.getenv("SMTP_HOST"),
+            smtp_host=smtp_host,
             smtp_port=smtp_port,
-            smtp_user=os.getenv("SMTP_USER"),
-            smtp_password=os.getenv("SMTP_PASSWORD"),
-            smtp_from=os.getenv("SMTP_FROM"),
+            smtp_user=smtp_user,
+            smtp_password=smtp_password,
+            smtp_from=smtp_from,
         )
 
         return cls(

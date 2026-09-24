@@ -59,3 +59,56 @@ class TestEmailUploader(unittest.TestCase):
                 mock_smtp_instance.starttls.assert_called_once()
                 mock_smtp_instance.login.assert_called_once_with("user@gmail.com", "app-password")
                 mock_smtp_instance.send_message.assert_called_once()
+
+    def test_send_tcx_ssl_465(self):
+        cfg = SyncConfig(
+            tp_email="mauro.upload@trainingpeaks.com",
+            smtp_host="mailserver.maurodruwel.be",
+            smtp_port=465,
+            smtp_user="sports@maurodruwel.be",
+            smtp_password="app-password",
+        )
+        uploader = TrainingPeaksEmailUploader(cfg)
+
+        with tempfile.NamedTemporaryFile(suffix=".tcx") as tmp:
+            tmp.write(b"<TCX>sample</TCX>")
+            tmp.flush()
+
+            mock_ssl_instance = MagicMock()
+            mock_ssl_cm = MagicMock()
+            mock_ssl_cm.__enter__.return_value = mock_ssl_instance
+
+            with patch("smtplib.SMTP_SSL", return_value=mock_ssl_cm) as mock_ssl_cls:
+                result = uploader.send_tcx(Path(tmp.name), subject="Test SSL Workout")
+                self.assertTrue(result)
+                mock_ssl_cls.assert_called_once_with("mailserver.maurodruwel.be", 465, timeout=30)
+                mock_ssl_instance.login.assert_called_once_with("sports@maurodruwel.be", "app-password")
+                mock_ssl_instance.send_message.assert_called_once()
+
+    def test_test_connection_not_configured(self):
+        cfg = SyncConfig()
+        uploader = TrainingPeaksEmailUploader(cfg)
+        ok, msg = uploader.test_connection()
+        self.assertFalse(ok)
+        self.assertIn("TP_EMAIL is not set", msg)
+
+    def test_test_connection_success(self):
+        cfg = SyncConfig(
+            tp_email="mauro.upload@trainingpeaks.com",
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_user="sports@maurodruwel.be",
+            smtp_password="secretpassword",
+        )
+        uploader = TrainingPeaksEmailUploader(cfg)
+
+        mock_smtp_instance = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+
+        with patch("smtplib.SMTP", return_value=mock_smtp_cm):
+            ok, msg = uploader.test_connection()
+            self.assertTrue(ok)
+            self.assertIn("Successfully authenticated", msg)
+            mock_smtp_instance.starttls.assert_called_once()
+            mock_smtp_instance.login.assert_called_once_with("sports@maurodruwel.be", "secretpassword")
