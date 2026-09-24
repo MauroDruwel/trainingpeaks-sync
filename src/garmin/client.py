@@ -86,5 +86,12 @@ class GarminUploader:
             if "409" in err_msg or "conflict" in err_msg or "already" in err_msg or "exists" in err_msg:
                 logger.info("Activity %s already exists in Garmin Connect.", tcx_path.name)
                 return True
+            if "consent" in err_msg or "412" in err_msg:
+                logger.error(
+                    "Failed to upload %s to Garmin Connect: EU Upload Consent is required. "
+                    "Please log into https://connect.garmin.com once and accept 'Storage & Processing' / 'Device Upload' in Profile & Privacy settings.",
+                    tcx_path.name,
+                )
+                return False
             logger.error("Failed to upload %s to Garmin Connect: %s", tcx_path.name, err)
             return False

@@ -102,7 +102,7 @@ class TestConfig(unittest.TestCase):
 
     def test_garmin_config_properties_and_load(self):
         from src.config import GarminConfig
-        cfg = GarminConfig()
+        cfg = GarminConfig(token_file="/non/existent/tokens.json")
         self.assertFalse(cfg.is_configured)
 
         cfg.email = "mauro@example.com"
