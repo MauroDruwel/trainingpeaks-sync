@@ -221,12 +221,22 @@ class SyncEngine:
                                     logger.info("[Dry Run] Would upload previously synced workout to Garmin Connect: %s", tcx_p.name)
                                 else:
                                     logger.info("Uploading previously synced workout to Garmin Connect: %s", tcx_p.name)
-                                    if self.garmin_uploader.upload_tcx(
-                                        tcx_p,
-                                        title=workout.title,
-                                        sport=workout.sport.value,
-                                        start_time=workout.start_time,
-                                    ):
+                                    if not workout.has_watch_data and workout.sport.value.lower() == "swim":
+                                        garmin_ok = bool(self.garmin_uploader.create_manual_swim_activity(
+                                            start_time=workout.start_time,
+                                            distance_meters=workout.distance_meters,
+                                            duration_seconds=workout.duration_seconds,
+                                            title=workout.title,
+                                            description=workout.description or f"🏊 Verified Swim Session ({'+'.join(workout.sources).upper()})",
+                                        ))
+                                    else:
+                                        garmin_ok = bool(self.garmin_uploader.upload_tcx(
+                                            tcx_p,
+                                            title=workout.title,
+                                            sport=workout.sport.value,
+                                            start_time=workout.start_time,
+                                        ))
+                                    if garmin_ok:
                                         self.state_manager.mark_garmin_uploaded(workout.session_id, True)
                                         if workout.strava_activity:
                                             self.state_manager.mark_garmin_uploaded(workout.strava_activity.id, True)
@@ -340,14 +350,24 @@ class SyncEngine:
             # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
             garmin_uploaded = False
             if self.garmin_uploader and self.config.garmin.enabled and self.garmin_uploader.is_configured():
-                garmin_uploaded = bool(
-                    self.garmin_uploader.upload_tcx(
-                        tcx_path,
-                        title=workout.title,
-                        sport=workout.sport.value,
+                if not workout.has_watch_data and workout.sport.value.lower() == "swim":
+                    aid = self.garmin_uploader.create_manual_swim_activity(
                         start_time=workout.start_time,
+                        distance_meters=workout.distance_meters,
+                        duration_seconds=workout.duration_seconds,
+                        title=workout.title,
+                        description=workout.description or f"🏊 Verified Swim Session ({'+'.join(workout.sources).upper()})",
                     )
-                )
+                    garmin_uploaded = bool(aid)
+                else:
+                    garmin_uploaded = bool(
+                        self.garmin_uploader.upload_tcx(
+                            tcx_path,
+                            title=workout.title,
+                            sport=workout.sport.value,
+                            start_time=workout.start_time,
+                        )
+                    )
 
             # Optional email dispatch
             if self.email_uploader.can_send():

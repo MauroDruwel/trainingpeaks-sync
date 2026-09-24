@@ -4,6 +4,7 @@ Uploads TCX files to Garmin Connect, which automatically syncs to TrainingPeaks
 via Garmin's official TrainingPeaks integration.
 """
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Callable
 
@@ -57,6 +58,66 @@ class GarminUploader:
             return True, f"Successfully authenticated to Garmin Connect as '{full_name}'."
         except Exception as err:
             return False, f"Garmin Connect authentication failed: {err}"
+
+    def create_manual_swim_activity(
+        self,
+        start_time: datetime,
+        distance_meters: float,
+        duration_seconds: int,
+        title: str,
+        description: Optional[str] = None,
+        time_zone: str = "Europe/Brussels",
+    ) -> Optional[str]:
+        """
+        Create a native manual swim activity in Garmin Connect.
+        Unlike TCX uploads (which use the legacy TCX schema where swimming defaults to 'Other'),
+        Garmin creates manual activities as native FIT activities with typeKey='swimming',
+        which sync into TrainingPeaks as a native Swim!
+        """
+        if not self.is_configured():
+            logger.debug("Garmin Connect not configured, skipping.")
+            return None
+
+        try:
+            client = self._get_client(interactive=False)
+
+            # Check if matching activity already exists in recent activities to prevent duplicates
+            date_str = start_time.strftime("%Y-%m-%d")
+            time_str = start_time.strftime("%H:%M")
+            recent_acts = client.get_activities(0, 10)
+            if recent_acts:
+                for act in recent_acts:
+                    act_local = str(act.get("startTimeLocal") or "")
+                    act_gmt = str(act.get("startTimeGMT") or "")
+                    if (date_str in act_local and time_str in act_local) or (date_str in act_gmt and time_str in act_gmt):
+                        logger.info("Swim activity for %s %s already exists in Garmin Connect (id: %s).", date_str, time_str, act.get("activityId"))
+                        return str(act.get("activityId"))
+
+            start_iso = start_time.strftime("%Y-%m-%dT%H:%M:%S.000")
+            distance_km = round(distance_meters / 1000.0, 3)
+            duration_min = max(1, int(round(duration_seconds / 60.0)))
+
+            logger.info("Creating native Garmin manual swim activity: %s (%sm, %s mins)...", title, distance_meters, duration_min)
+            res = client.create_manual_activity(
+                start_datetime=start_iso,
+                time_zone=time_zone,
+                type_key="swimming",
+                distance_km=distance_km,
+                duration_min=duration_min,
+                activity_name=title,
+            )
+            aid = str(res.get("activityId")) if isinstance(res, dict) else None
+            if aid and description:
+                try:
+                    client.set_activity_description(aid, description)
+                except Exception as desc_err:
+                    logger.debug("Could not set activity description: %s", desc_err)
+
+            logger.info("Successfully created native Garmin swim activity %s -> auto-syncing to TrainingPeaks as Swim!", aid)
+            return aid
+        except Exception as err:
+            logger.error("Failed to create native Garmin manual swim activity: %s", err)
+            return None
 
     def upload_tcx(
         self,

@@ -130,3 +130,54 @@ class TestGarminUploader(unittest.TestCase):
                 "99902", "🏊 Swim: LAGO Kortrijk Weide"
             )
 
+    @patch("garminconnect.Garmin")
+    def test_create_manual_swim_activity_success(self, mock_garmin_cls):
+        from datetime import datetime
+        mock_instance = MagicMock()
+        mock_instance.get_activities.return_value = []
+        mock_instance.create_manual_activity.return_value = {"activityId": 123456}
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+
+        aid = uploader.create_manual_swim_activity(
+            start_time=datetime(2026, 9, 21, 15, 0, 0),
+            distance_meters=4500.0,
+            duration_seconds=6300,
+            title="🏊 Swim: LAGO Kortrijk Weide",
+            description="Sample description",
+        )
+        self.assertEqual(aid, "123456")
+        mock_instance.create_manual_activity.assert_called_once_with(
+            start_datetime="2026-09-21T15:00:00.000",
+            time_zone="Europe/Brussels",
+            type_key="swimming",
+            distance_km=4.5,
+            duration_min=105,
+            activity_name="🏊 Swim: LAGO Kortrijk Weide",
+        )
+        mock_instance.set_activity_description.assert_called_once_with("123456", "Sample description")
+
+    @patch("garminconnect.Garmin")
+    def test_create_manual_swim_activity_already_exists(self, mock_garmin_cls):
+        from datetime import datetime
+        mock_instance = MagicMock()
+        mock_instance.get_activities.return_value = [
+            {"activityId": 99999, "startTimeLocal": "2026-09-21 15:00:00"}
+        ]
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+
+        aid = uploader.create_manual_swim_activity(
+            start_time=datetime(2026, 9, 21, 15, 0, 0),
+            distance_meters=4500.0,
+            duration_seconds=6300,
+            title="🏊 Swim: LAGO Kortrijk Weide",
+        )
+        self.assertEqual(aid, "99999")
+        mock_instance.create_manual_activity.assert_not_called()
+
+
