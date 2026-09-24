@@ -1,0 +1,83 @@
+"""
+Unit tests for Garmin Connect uploader.
+"""
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from src.config import GarminConfig
+from src.garmin.client import GarminUploader
+
+
+class TestGarminUploader(unittest.TestCase):
+    """Test Garmin Connect activity uploader and bridge."""
+
+    def test_is_configured(self):
+        cfg = GarminConfig()
+        uploader = GarminUploader(cfg)
+        self.assertFalse(uploader.is_configured())
+
+        cfg.email = "mauro@example.com"
+        cfg.password = "password"
+        self.assertTrue(uploader.is_configured())
+
+    def test_upload_tcx_file_not_found(self):
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+        result = uploader.upload_tcx(Path("/non/existent/activity.tcx"))
+        self.assertFalse(result)
+
+    def test_test_connection_not_configured(self):
+        cfg = GarminConfig()
+        uploader = GarminUploader(cfg)
+        success, msg = uploader.test_connection()
+        self.assertFalse(success)
+        self.assertIn("not configured", msg)
+
+    @patch("garminconnect.Garmin")
+    def test_test_connection_success(self, mock_garmin_cls):
+        mock_instance = MagicMock()
+        mock_instance.get_full_name.return_value = "Mauro Druwel"
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+        success, msg = uploader.test_connection()
+
+        self.assertTrue(success)
+        self.assertIn("Mauro Druwel", msg)
+        mock_instance.login.assert_called_once()
+
+    @patch("garminconnect.Garmin")
+    def test_upload_tcx_success(self, mock_garmin_cls):
+        mock_instance = MagicMock()
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+
+        with tempfile.NamedTemporaryFile(suffix=".tcx") as tmp:
+            tmp.write(b"<TCX>content</TCX>")
+            tmp.flush()
+
+            result = uploader.upload_tcx(Path(tmp.name))
+            self.assertTrue(result)
+            mock_instance.upload_activity.assert_called_once_with(tmp.name)
+
+    @patch("garminconnect.Garmin")
+    def test_upload_tcx_duplicate_handled_gracefully(self, mock_garmin_cls):
+        mock_instance = MagicMock()
+        mock_instance.upload_activity.side_effect = Exception("409 Conflict: Activity already exists")
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+
+        with tempfile.NamedTemporaryFile(suffix=".tcx") as tmp:
+            tmp.write(b"<TCX>content</TCX>")
+            tmp.flush()
+
+            result = uploader.upload_tcx(Path(tmp.name))
+            # Duplicate conflict is treated as already uploaded / success
+            self.assertTrue(result)

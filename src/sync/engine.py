@@ -28,6 +28,7 @@ from ..tcx.formatter import format_swim_tcx, format_xml_file, validate_tcx_file
 from ..ai.analyzer import AIAnalyzer
 from .state import SyncStateManager
 from .email import TrainingPeaksEmailUploader
+from ..garmin.client import GarminUploader
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class SyncEngine:
         state_manager: Optional[SyncStateManager] = None,
         ai_analyzer: Optional[AIAnalyzer] = None,
         reconciler: Optional[WorkoutReconciler] = None,
+        garmin_uploader: Optional[GarminUploader] = None,
     ):
         self.config = config or AppConfig.load()
         self.state_manager = state_manager or SyncStateManager(self.config.sync.state_file)
@@ -84,7 +86,10 @@ class SyncEngine:
         if not self.ai_analyzer and self.config.ai.enabled:
             self.ai_analyzer = AIAnalyzer(self.config.ai)
 
-        # 6. TrainingPeaks email uploader
+        # 6. Garmin Connect Bridge (auto-syncs into TrainingPeaks)
+        self.garmin_uploader = garmin_uploader or GarminUploader(self.config.garmin)
+
+        # 7. Optional email dispatcher
         self.email_uploader = TrainingPeaksEmailUploader(self.config.sync)
 
     def sync(
@@ -275,7 +280,11 @@ class SyncEngine:
                 except Exception as ai_err:
                     logger.warning("AI analysis failed for %s: %s", workout.session_id, ai_err)
 
-            # Optional TrainingPeaks email upload
+            # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
+            if self.garmin_uploader and self.garmin_uploader.is_configured():
+                self.garmin_uploader.upload_tcx(tcx_path)
+
+            # Optional email dispatch
             if self.email_uploader.can_send():
                 self.email_uploader.send_tcx(tcx_path, subject=f"TrainingPeaks Activity: {workout.title}")
 

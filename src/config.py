@@ -79,6 +79,20 @@ class StudentAppConfig:
 
 
 @dataclass
+class GarminConfig:
+    """Garmin Connect configuration for automatic TrainingPeaks bridging."""
+    enabled: bool = False
+    email: Optional[str] = None
+    password: Optional[str] = None
+    token_file: str = ".garmin_tokens.json"
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if Garmin Connect credentials or saved tokens exist."""
+        return bool((self.email and self.password) or Path(self.token_file).exists())
+
+
+@dataclass
 class FusionConfig:
     """Settings for multi-source workout reconciliation & synthetic activity generation."""
     time_window_minutes: int = 90
@@ -178,6 +192,7 @@ class AppConfig:
     studentapp: StudentAppConfig = field(default_factory=StudentAppConfig)
     fusion: FusionConfig = field(default_factory=FusionConfig)
     ai: AIConfig = field(default_factory=AIConfig)
+    garmin: GarminConfig = field(default_factory=GarminConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
 
@@ -395,12 +410,31 @@ class AppConfig:
             smtp_from=smtp_from,
         )
 
+        # 7. Garmin Connect Bridge
+        garmin_email = os.getenv("GARMIN_EMAIL")
+        garmin_password = os.getenv("GARMIN_PASSWORD")
+        garmin_token_file = os.getenv("GARMIN_TOKEN_FILE", ".garmin_tokens.json")
+        garmin_enabled_env = os.getenv("GARMIN_ENABLED")
+        garmin_enabled = (
+            garmin_enabled_env.lower() in ("true", "1", "yes")
+            if garmin_enabled_env is not None
+            else bool(garmin_email or Path(garmin_token_file).exists())
+        )
+
+        garmin = GarminConfig(
+            enabled=garmin_enabled,
+            email=garmin_email,
+            password=garmin_password,
+            token_file=garmin_token_file,
+        )
+
         return cls(
             strava=strava,
             lago=lago,
             studentapp=studentapp,
             fusion=fusion,
             ai=ai,
+            garmin=garmin,
             sync=sync,
             processing=ProcessingConfig(),
         )

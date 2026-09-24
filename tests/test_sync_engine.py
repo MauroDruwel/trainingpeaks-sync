@@ -149,3 +149,36 @@ class TestSyncEngine(unittest.TestCase):
         # In dry run, file should not be created and state not persisted
         self.assertFalse(self.state_mgr.is_synced(2001))
         mock_api.download_tcx.assert_not_called()
+
+    def test_sync_with_garmin_uploader(self):
+        mock_oauth = MagicMock()
+        mock_token = AthleteToken(777, "Mauro", "tok", "ref", 9999999999)
+        mock_oauth.get_valid_token.return_value = mock_token
+
+        mock_api = MagicMock()
+        mock_api.list_activities.return_value = [
+            {"id": 3001, "name": "Speed Swim", "type": "Swim", "start_date": "2026-09-23T08:00:00Z"}
+        ]
+
+        def fake_download(ath_id, act_id, dest):
+            with open(dest, "w") as f:
+                f.write("<TCX>swim</TCX>")
+            return True
+
+        mock_api.download_tcx.side_effect = fake_download
+        mock_garmin = MagicMock()
+        mock_garmin.is_configured.return_value = True
+
+        engine = SyncEngine(
+            config=self.config,
+            oauth_client=mock_oauth,
+            api_client=mock_api,
+            state_manager=self.state_mgr,
+            garmin_uploader=mock_garmin,
+        )
+
+        with patch("src.sync.engine.validate_tcx_file", return_value=(True, MagicMock())), \
+             patch("src.sync.engine.format_xml_file"):
+            summary = engine.sync()
+            self.assertEqual(summary.newly_synced, 1)
+            mock_garmin.upload_tcx.assert_called_once()

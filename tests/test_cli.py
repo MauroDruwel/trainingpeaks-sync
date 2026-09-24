@@ -167,3 +167,16 @@ class TestCLI(unittest.TestCase):
              patch("builtins.print"):
             exit_code = main(["test-email"])
             self.assertEqual(exit_code, 0)
+
+    def test_cmd_garmin_auth(self):
+        with patch("src.cli.GarminUploader.test_connection", return_value=(True, "Connected as Athlete")), \
+             patch("src.cli.AppConfig.load") as mock_load, \
+             patch("builtins.print"):
+            mock_cfg = MagicMock()
+            mock_cfg.garmin.is_configured = True
+            mock_cfg.garmin.email = "mauro@example.com"
+            mock_cfg.garmin.token_file = ".garmin_tokens.json"
+            mock_load.return_value = mock_cfg
+
+            exit_code = main(["garmin-auth"])
+            self.assertEqual(exit_code, 0)

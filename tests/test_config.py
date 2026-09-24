@@ -99,3 +99,24 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(app_cfg.sync.smtp_password, "supersecretpassword")
             self.assertEqual(app_cfg.sync.smtp_from, "sports@maurodruwel.be")
             self.assertEqual(app_cfg.sync.tp_email, "athlete.upload@trainingpeaks.com")
+
+    def test_garmin_config_properties_and_load(self):
+        from src.config import GarminConfig
+        cfg = GarminConfig()
+        self.assertFalse(cfg.is_configured)
+
+        cfg.email = "mauro@example.com"
+        cfg.password = "secret"
+        self.assertTrue(cfg.is_configured)
+
+        env_vars = {
+            "GARMIN_EMAIL": "athlete@garmin.com",
+            "GARMIN_PASSWORD": "garminpass123",
+            "GARMIN_TOKEN_FILE": "/tmp/custom_tokens.json",
+        }
+        with patch.dict(os.environ, env_vars, clear=True):
+            app_cfg = AppConfig.load()
+            self.assertTrue(app_cfg.garmin.is_configured)
+            self.assertEqual(app_cfg.garmin.email, "athlete@garmin.com")
+            self.assertEqual(app_cfg.garmin.password, "garminpass123")
+            self.assertEqual(app_cfg.garmin.token_file, "/tmp/custom_tokens.json")

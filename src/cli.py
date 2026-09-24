@@ -17,6 +17,7 @@ from .sync.engine import SyncEngine
 from .sync.scheduler import SyncScheduler
 from .sync.state import SyncStateManager
 from .sync.email import TrainingPeaksEmailUploader
+from .garmin.client import GarminUploader
 from .ai.analyzer import AIAnalyzer
 from .ai.tts import TTSGenerator
 from .tcx.formatter import validate_tcx_file
@@ -144,6 +145,12 @@ def create_parser() -> argparse.ArgumentParser:
 
     # --- Test-Email command ---
     subparsers.add_parser("test-email", help="Verify SMTP connection and TrainingPeaks email upload configuration")
+
+    # --- Garmin Auth command ---
+    subparsers.add_parser(
+        "garmin-auth",
+        help="Authenticate with Garmin Connect and cache session tokens for automatic TrainingPeaks sync",
+    )
 
     # --- Analyze command ---
     analyze_parser = subparsers.add_parser("analyze", help="Run AI analysis on an existing TCX file")
@@ -413,23 +420,51 @@ def cmd_status(config: AppConfig) -> int:
         print(f"  • Language: {config.ai.language}")
         print(f"  • Speech (TTS): {'Enabled' if config.ai.tts_enabled else 'Disabled'}")
 
-    # 6. TrainingPeaks Destination
+    # 6. TrainingPeaks Destination & Garmin Bridge
     state_mgr = SyncStateManager(config.sync.state_file)
-    print("\n[6. TrainingPeaks Destination & Sync State]")
-    print(f"  • Output Directory: {config.sync.output_dir.resolve()}")
+    print("\n[6. TrainingPeaks Destination & Garmin Bridge]")
+    print(f"  • Output Directory: {config.sync.output_dir.resolve()} (Manual calendar drop)")
     print(f"  • State File: {config.sync.state_file.resolve()}")
     print(f"  • Last Sync: {state_mgr.get_last_sync() or 'Never'}")
     print(f"  • Total Synced Activities: {state_mgr.get_total_synced_count()}")
-    if config.sync.is_email_upload_configured:
-        print(f"  • Email Direct Upload: ✅ Configured -> {config.sync.tp_email} (via {config.sync.smtp_host}:{config.sync.smtp_port})")
+    if config.garmin.is_configured:
+        token_path = Path(config.garmin.token_file)
+        token_status = "Tokens cached" if token_path.exists() else "Credentials configured"
+        print(f"  • Garmin Connect Bridge: ✅ Active ({config.garmin.email or 'Cached session'}, {token_status})")
     else:
-        if not config.sync.tp_email:
-            print("  • Email Direct Upload: ⚪ TP_EMAIL not configured (set TP_EMAIL=username.upload@trainingpeaks.com)")
-        else:
-            print(f"  • Email Direct Upload: ⚪ TP_EMAIL set ({config.sync.tp_email}) but SMTP incomplete (check SMTP_HOST / LAGO_IMAP_SERVER)")
+        print("  • Garmin Connect Bridge: ⚪ Not configured (set GARMIN_EMAIL & GARMIN_PASSWORD in .env)")
 
     print("\n" + "=" * 60 + "\n")
     return 0
+
+
+def cmd_garmin_auth(args: argparse.Namespace, config: AppConfig) -> int:
+    """Authenticate with Garmin Connect, handling MFA interactively if needed."""
+    print("\n⌚ Garmin Connect Bridge Authentication")
+    print("-" * 55)
+    print("Garmin Connect automatically syncs uploaded activities directly")
+    print("to your TrainingPeaks calendar via their official partner sync.")
+    print("-" * 55)
+
+    if not config.garmin.is_configured:
+        print("❌ GARMIN_EMAIL and GARMIN_PASSWORD are not set in your .env file.")
+        print("Please add to your .env file:")
+        print("  GARMIN_EMAIL=your_garmin_login@email.com")
+        print("  GARMIN_PASSWORD=your_garmin_password")
+        return 1
+
+    print(f"Authenticating as: {config.garmin.email or 'configured credentials'}...")
+    uploader = GarminUploader(config.garmin)
+    success, msg = uploader.test_connection(interactive=True)
+    if success:
+        print(f"\n✅ {msg}")
+        print(f"💾 Session tokens saved to: {config.garmin.token_file}")
+        print("🎉 Garmin Connect bridge is active! Any new synced workouts will automatically")
+        print("   push to Garmin Connect and appear on your TrainingPeaks calendar!\n")
+        return 0
+    else:
+        print(f"\n❌ {msg}\n")
+        return 1
 
 
 def cmd_test_email(args: argparse.Namespace, config: AppConfig) -> int:
@@ -561,6 +596,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_auth(args, config)
     elif args.command == "status":
         return cmd_status(config)
+    elif args.command == "garmin-auth":
+        return cmd_garmin_auth(args, config)
     elif args.command == "test-email":
         return cmd_test_email(args, config)
     elif args.command == "nimstats":
