@@ -14,6 +14,7 @@ from ..models import (
     Sport,
     ActivitySummary,
     SwimReservation,
+    PdfTrainingSession,
     FusedWorkout,
     SyncResult,
     SyncBatchSummary,
@@ -22,6 +23,7 @@ from ..strava.oauth import StravaOAuthClient
 from ..strava.api import StravaAPIClient
 from ..sources.lago import LagoIMAPClient
 from ..sources.studentapp import StudentAppClient
+from ..sources.pdf import TrainingPdfClient
 from ..fusion.reconciler import WorkoutReconciler
 from ..fusion.synthetic_tcx import generate_synthetic_swim_tcx
 from ..tcx.formatter import format_swim_tcx, format_xml_file, validate_tcx_file
@@ -55,9 +57,16 @@ class SyncEngine:
         ai_analyzer: Optional[AIAnalyzer] = None,
         reconciler: Optional[WorkoutReconciler] = None,
         garmin_uploader: Optional[GarminUploader] = None,
+        pdf_client: Optional[TrainingPdfClient] = None,
     ):
         self.config = config or AppConfig.load()
         self.state_manager = state_manager or SyncStateManager(self.config.sync.state_file)
+
+        # Optional PDF Training Plan client
+        self.pdf_client = pdf_client or TrainingPdfClient(
+            directory=self.config.training_pdf.directory,
+            file_path=self.config.training_pdf.file_path,
+        )
 
         # 1. Strava client initialization
         self.oauth_client = oauth_client
@@ -136,21 +145,29 @@ class SyncEngine:
             logger.info("Checking StudentApp pool bookings (HAR file / sports API)...")
             studentapp_reservations = self.studentapp_client.fetch_reservations()
 
+        # 4. Fetch PDF training plans if configured and enabled
+        pdf_trainings: List[PdfTrainingSession] = []
+        if self.config.training_pdf.enabled and self.config.training_pdf.is_configured:
+            logger.info("Checking PDF training plans (%s)...", self.config.training_pdf.directory)
+            pdf_trainings = self.pdf_client.fetch_trainings()
+
         # Guard: check if any data was found or any source configured & enabled
         total_sources_active = bool(
             self.api_client
             or (self.config.lago.enabled and self.config.lago.is_configured)
             or (self.config.studentapp.enabled and self.config.studentapp.is_configured)
+            or (self.config.training_pdf.enabled and self.config.training_pdf.is_configured)
         )
         if not total_sources_active:
-            logger.error("No active input sources enabled (Strava, LAGO, or StudentApp). Please check .env settings.")
+            logger.error("No active input sources enabled (Strava, LAGO, StudentApp, or PDF). Please check .env settings.")
             return batch_summary
 
-        # 4. Multi-Source Reconciler / Fusion
+        # 5. Multi-Source Reconciler / Fusion
         fused_workouts = self.reconciler.reconcile(
             strava_activities=strava_activities,
             lago_reservations=lago_reservations,
             studentapp_reservations=studentapp_reservations,
+            pdf_trainings=pdf_trainings,
         )
 
         batch_summary.total_found = len(fused_workouts)
@@ -204,7 +221,7 @@ class SyncEngine:
                                     logger.info("[Dry Run] Would upload previously synced workout to Garmin Connect: %s", tcx_p.name)
                                 else:
                                     logger.info("Uploading previously synced workout to Garmin Connect: %s", tcx_p.name)
-                                    if self.garmin_uploader.upload_tcx(tcx_p):
+                                    if self.garmin_uploader.upload_tcx(tcx_p, title=workout.title, sport=workout.sport.value):
                                         self.state_manager.mark_garmin_uploaded(workout.session_id, True)
                                         if workout.strava_activity:
                                             self.state_manager.mark_garmin_uploaded(workout.strava_activity.id, True)
@@ -318,7 +335,13 @@ class SyncEngine:
             # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
             garmin_uploaded = False
             if self.garmin_uploader and self.config.garmin.enabled and self.garmin_uploader.is_configured():
-                garmin_uploaded = bool(self.garmin_uploader.upload_tcx(tcx_path))
+                garmin_uploaded = bool(
+                    self.garmin_uploader.upload_tcx(
+                        tcx_path,
+                        title=workout.title,
+                        sport=workout.sport.value,
+                    )
+                )
 
             # Optional email dispatch
             if self.email_uploader.can_send():

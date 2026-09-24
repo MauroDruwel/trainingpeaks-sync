@@ -12,7 +12,7 @@ from ..models import FusedWorkout, SwimReservation
 def generate_synthetic_swim_tcx(
     workout: Optional[FusedWorkout] = None,
     reservation: Optional[SwimReservation] = None,
-    distance_meters: float = 2000.0,
+    distance_meters: float = 4500.0,
     duration_seconds: int = 6300,  # 1h 45m
     facility_name: str = "Pool",
 ) -> str:

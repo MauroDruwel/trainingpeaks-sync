@@ -58,10 +58,16 @@ class GarminUploader:
         except Exception as err:
             return False, f"Garmin Connect authentication failed: {err}"
 
-    def upload_tcx(self, tcx_path: Path) -> bool:
+    def upload_tcx(
+        self,
+        tcx_path: Path,
+        title: Optional[str] = None,
+        sport: Optional[str] = None,
+    ) -> bool:
         """
         Upload a TCX activity file to Garmin Connect.
         When connected, Garmin Connect automatically forwards the workout to TrainingPeaks.
+        Also categorizes activity (e.g. lap_swimming) and sets the activity name.
         """
         if not self.is_configured():
             logger.debug("Garmin Connect upload not configured, skipping.")
@@ -80,6 +86,31 @@ class GarminUploader:
                 "Successfully uploaded %s to Garmin Connect -> auto-syncing to TrainingPeaks!",
                 tcx_path.name,
             )
+
+            # Automatically categorize activity in Garmin Connect (e.g. lap_swimming) and apply title
+            try:
+                import time
+                time.sleep(1.5)
+                recent_acts = client.get_activities(0, 3)
+                if recent_acts:
+                    target_act = recent_acts[0]
+                    aid = target_act.get("activityId")
+                    if aid:
+                        sport_str = str(sport).lower() if sport else "swim"
+                        if "swim" in sport_str:
+                            client.set_activity_type(str(aid), type_id=27, type_key="lap_swimming", parent_type_id=26)
+                            logger.info("Categorized Garmin activity %s as lap_swimming", aid)
+                        elif "run" in sport_str:
+                            client.set_activity_type(str(aid), type_id=1, type_key="running", parent_type_id=17)
+                        elif "bike" in sport_str or "ride" in sport_str:
+                            client.set_activity_type(str(aid), type_id=2, type_key="cycling", parent_type_id=17)
+
+                        if title:
+                            client.set_activity_name(str(aid), title)
+                            logger.info("Set Garmin activity %s title to '%s'", aid, title)
+            except Exception as cat_err:
+                logger.warning("Could not set activity category/title on Garmin Connect: %s", cat_err)
+
             return True
         except Exception as err:
             err_msg = str(err).lower()

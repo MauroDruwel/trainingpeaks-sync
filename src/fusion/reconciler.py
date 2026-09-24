@@ -12,6 +12,7 @@ from ..models import (
     Sport,
     ActivitySummary,
     SwimReservation,
+    PdfTrainingSession,
     FusedWorkout,
 )
 
@@ -30,6 +31,7 @@ class WorkoutReconciler:
         strava_activities: List[ActivitySummary],
         lago_reservations: List[SwimReservation],
         studentapp_reservations: List[SwimReservation],
+        pdf_trainings: Optional[List[PdfTrainingSession]] = None,
     ) -> List[FusedWorkout]:
         """
         Reconcile Strava activities, LAGO reservations, and StudentApp bookings
@@ -42,7 +44,18 @@ class WorkoutReconciler:
 
         window = timedelta(minutes=self.config.time_window_minutes)
 
-        # 1. First, pair Strava activities with matching reservations
+        pdf_trainings = pdf_trainings or []
+        matched_pdf: Set[str] = set()
+
+        def find_matching_pdf(dt: datetime) -> Optional[PdfTrainingSession]:
+            target_date = dt.date()
+            for pt in pdf_trainings:
+                if pt.date and pt.date.date() == target_date and pt.session_id not in matched_pdf:
+                    matched_pdf.add(pt.session_id)
+                    return pt
+            return None
+
+        # 1. First, pair Strava activities with matching reservations and PDF plans
         for strava_act in strava_activities:
             act_time = strava_act.start_datetime
 
@@ -62,11 +75,18 @@ class WorkoutReconciler:
                     matched_student.add(stud.reservation_id)
                     break
 
+            # Find matching PDF training plan
+            matching_pdf = None
+            if strava_act.sport == Sport.SWIM:
+                matching_pdf = find_matching_pdf(act_time)
+
             sources = ["strava"]
             if matching_lago:
                 sources.append("lago")
             if matching_student:
                 sources.append("studentapp")
+            if matching_pdf:
+                sources.append("pdf")
 
             facility_name = ""
             if matching_lago:
@@ -75,9 +95,6 @@ class WorkoutReconciler:
                 facility_name = matching_student.facility
 
             # Calculate duration:
-            # When resting in the pool, Strava often cuts off time or auto-pauses.
-            # We preserve the full session slot (from matched LAGO/StudentApp booking
-            # or default 1h45m / 6300s), ensuring the athlete gets credited for the full slot.
             if strava_act.sport == Sport.SWIM:
                 slot_duration = (
                     matching_lago.duration_seconds
@@ -96,11 +113,15 @@ class WorkoutReconciler:
             if strava_act.sport == Sport.SWIM and facility_name:
                 title = f"🏊 Swim: {facility_name}"
 
+            distance_val = strava_act.distance_meters
+            if strava_act.sport == Sport.SWIM and distance_val <= 0 and matching_pdf:
+                distance_val = matching_pdf.total_distance_meters
+
             # Build rich description showing matched sources
             desc_lines = [
                 f"🏊 TrainingPeaks Fused Workout ({strava_act.sport.value})",
                 f"• Verified Sources: {', '.join(s.upper() for s in sources)}",
-                f"• Watch Telemetry: Recorded (Distance: {strava_act.distance_meters/1000:.2f} km)",
+                f"• Watch Telemetry: Recorded (Distance: {distance_val/1000:.2f} km)",
             ]
             if strava_act.sport == Sport.SWIM and duration_sec > strava_act.elapsed_time_seconds:
                 desc_lines.append(
@@ -113,13 +134,17 @@ class WorkoutReconciler:
                 desc_lines.append(f"• LAGO Reservation: #{matching_lago.reservation_id} ({matching_lago.facility})")
             if matching_student:
                 desc_lines.append(f"• StudentApp Booking: #{matching_student.reservation_id} ({matching_student.facility})")
+            if matching_pdf:
+                desc_lines.append(f"• Training Plan: {matching_pdf.source_file} (Plan Volume: {matching_pdf.total_distance_meters:.0f}m)")
+                if matching_pdf.content:
+                    desc_lines.append(f"\n📋 Training Details:\n{matching_pdf.content}")
 
             workout = FusedWorkout(
                 session_id=f"fused_strava_{strava_act.id}",
                 sport=strava_act.sport,
                 start_time=act_time,
                 duration_seconds=duration_sec,
-                distance_meters=strava_act.distance_meters,
+                distance_meters=distance_val,
                 sources=sources,
                 has_watch_data=True,
                 title=title,
@@ -127,6 +152,7 @@ class WorkoutReconciler:
                 strava_activity=strava_act,
                 lago_reservation=matching_lago,
                 studentapp_reservation=matching_student,
+                pdf_training=matching_pdf,
             )
 
             fused_workouts.append(workout)
@@ -172,7 +198,14 @@ class WorkoutReconciler:
                 facility = primary_res.facility
                 start_dt = primary_res.start_time
                 duration = primary_res.duration_seconds or self.config.synthetic_swim_duration_seconds
-                distance = self.config.synthetic_swim_distance_meters
+
+                # Match with PDF training plan if available
+                matching_pdf = find_matching_pdf(start_dt)
+                if matching_pdf:
+                    sources.append("pdf")
+                    distance = matching_pdf.total_distance_meters
+                else:
+                    distance = self.config.synthetic_swim_distance_meters
 
                 title = f"🏊 Swim: {facility} (Reservation Verified)"
                 desc_lines = [
@@ -180,13 +213,17 @@ class WorkoutReconciler:
                     f"• Verified Sources: {', '.join(s.upper() for s in sources)}",
                     f"• Facility: {facility}",
                     f"• Duration: {duration // 60} minutes",
-                    f"• Estimated Distance: {distance / 1000:.2f} km",
+                    f"• Distance: {distance / 1000:.2f} km ({distance:.0f}m)",
                     "• Note: Recorded from verified pool booking. Telemetry was not captured by watch.",
                 ]
                 if lago_res:
                     desc_lines.append(f"• LAGO Ref: #{lago_res.reservation_id}")
                 if stud_res:
                     desc_lines.append(f"• StudentApp Ref: #{stud_res.reservation_id}")
+                if matching_pdf:
+                    desc_lines.append(f"• Training Plan: {matching_pdf.source_file} (Plan Volume: {matching_pdf.total_distance_meters:.0f}m)")
+                    if matching_pdf.content:
+                        desc_lines.append(f"\n📋 Training Details:\n{matching_pdf.content}")
 
                 res_id_tag = (lago_res.reservation_id if lago_res else stud_res.reservation_id) if stud_res else "res"
                 synthetic_workout = FusedWorkout(
@@ -201,6 +238,7 @@ class WorkoutReconciler:
                     description="\n".join(desc_lines),
                     lago_reservation=lago_res,
                     studentapp_reservation=stud_res,
+                    pdf_training=matching_pdf,
                 )
 
                 fused_workouts.append(synthetic_workout)
@@ -209,6 +247,42 @@ class WorkoutReconciler:
                     facility,
                     start_dt.strftime("%Y-%m-%d %H:%M"),
                     "+".join(sources)
+                )
+
+        # 4. Standalone PDF training plans without reservations
+        for pt in pdf_trainings:
+            if pt.session_id not in matched_pdf and pt.date:
+                start_dt = pt.date
+                duration = pt.duration_seconds or self.config.synthetic_swim_duration_seconds
+                distance = pt.total_distance_meters
+                title = f"🏊 Swim: {pt.title} (PDF Plan)"
+                desc_lines = [
+                    "🏊 TrainingPeaks Verified Swim (From Training PDF)",
+                    f"• Source: PDF Training Plan ({pt.source_file})",
+                    f"• Distance: {distance / 1000:.2f} km ({distance:.0f}m)",
+                    f"• Duration: {duration // 60} minutes",
+                ]
+                if pt.content:
+                    desc_lines.append(f"\n📋 Training Details:\n{pt.content}")
+
+                pdf_workout = FusedWorkout(
+                    session_id=f"pdf_{pt.session_id}",
+                    sport=Sport.SWIM,
+                    start_time=start_dt,
+                    duration_seconds=duration,
+                    distance_meters=distance,
+                    sources=["pdf"],
+                    has_watch_data=False,
+                    title=title,
+                    description="\n".join(desc_lines),
+                    pdf_training=pt,
+                )
+                fused_workouts.append(pdf_workout)
+                logger.info(
+                    "Generated workout from PDF training plan: %s on %s (%0.0fm)",
+                    pt.title,
+                    start_dt.strftime("%Y-%m-%d"),
+                    distance,
                 )
 
         return fused_workouts

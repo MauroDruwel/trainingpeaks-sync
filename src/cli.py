@@ -14,6 +14,7 @@ from .models import Sport, AnalysisConfig
 from .strava.oauth import StravaOAuthClient
 from .sources.lago import LagoEmailParser, LagoIMAPClient
 from .sources.studentapp import StudentAppParser, StudentAppClient
+from .sources.pdf import TrainingPdfClient
 from .sync.engine import SyncEngine
 from .sync.scheduler import SyncScheduler
 from .sync.state import SyncStateManager
@@ -140,6 +141,21 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "studentapp-auth",
         help="Authenticate with StudentApp using email/password and cache session tokens",
+    )
+
+    # --- PDF Training Plans command ---
+    pdf_parser = subparsers.add_parser("pdf", help="Inspect and parse swimming training plan PDFs")
+    pdf_parser.add_argument(
+        "--file",
+        type=str,
+        default=None,
+        help="Path to a PDF training plan file to parse",
+    )
+    pdf_parser.add_argument(
+        "--dir",
+        type=str,
+        default=None,
+        help="Directory containing training PDF files",
     )
 
     # --- Auth command ---
@@ -370,6 +386,33 @@ def cmd_auth(args: argparse.Namespace, config: AppConfig) -> int:
         return 1
 
 
+def cmd_pdf(args: argparse.Namespace, config: AppConfig) -> int:
+    """Inspect and parse PDF training plans."""
+    print("\n🏊 PDF Training Plan Inspector")
+    print("-" * 50)
+    file_path = Path(args.file) if args.file else config.training_pdf.file_path
+    dir_path = Path(args.dir) if args.dir else config.training_pdf.directory
+
+    client = TrainingPdfClient(directory=dir_path, file_path=file_path)
+    sessions = client.fetch_trainings()
+    if not sessions:
+        print(f"⚪ No training plans found in {file_path or dir_path}")
+        return 0
+
+    print(f"✅ Found {len(sessions)} training session(s):\n")
+    for idx, sess in enumerate(sessions, 1):
+        date_str = sess.date_str or "No date detected"
+        print(f"[{idx}] {sess.title}")
+        print(f"  • Date: {date_str}")
+        print(f"  • Total Distance: {sess.total_distance_meters:.0f}m ({sess.total_distance_meters / 1000:.2f} km)")
+        print(f"  • Source File: {sess.source_file}")
+        if sess.content:
+            preview = sess.content[:200].replace("\n", " ")
+            print(f"  • Content Preview: {preview}...")
+        print()
+    return 0
+
+
 def cmd_status(config: AppConfig) -> int:
     """Display system status across all 3 sources, AI, and destinations."""
     print("\n" + "=" * 60)
@@ -439,14 +482,23 @@ def cmd_status(config: AppConfig) -> int:
         har_status = "✅ Found" if config.studentapp.har_path.exists() else "❌ File not found"
         print(f"  • HAR File (Fallback): {config.studentapp.har_path} ({har_status})")
 
-    # 4. Reconciliation & Synthetic Workouts
-    print("\n[4. Multi-Source Fusion & Watch-Forgotten Support]")
+    # 4. PDF Training Plans
+    print("\n[4. PDF Training Plans]")
+    if config.training_pdf.enabled and config.training_pdf.is_configured:
+        print(f"  • Status: ✅ Active (Directory: {config.training_pdf.directory})")
+    elif config.training_pdf.is_configured:
+        print(f"  • Status: ⚪ Disabled (TRAINING_PDF_ENABLED=false)")
+    else:
+        print(f"  • Status: ⚪ Disabled (set TRAINING_PDF_ENABLED=true and place PDFs in {config.training_pdf.directory})")
+
+    # 5. Reconciliation & Synthetic Workouts
+    print("\n[5. Multi-Source Fusion & Watch-Forgotten Support]")
     print(f"  • Auto-generate synthetic workout if watch forgotten: {'✅ Yes' if config.fusion.auto_generate_synthetic_if_watch_forgotten else '⚪ No'}")
-    print(f"  • Default synthetic swim distance: {config.fusion.synthetic_swim_distance_meters:.0f}m")
+    print(f"  • Default synthetic swim distance: {config.fusion.synthetic_swim_distance_meters:.0f}m ({config.fusion.synthetic_swim_distance_meters / 1000:.2f} km)")
     print(f"  • Default duration: {config.fusion.synthetic_swim_duration_seconds // 60} mins")
     print(f"  • Matching time window: ±{config.fusion.time_window_minutes} mins")
 
-    # 5. AI Coaching Analysis (OpenAI-Compatible)
+    # 6. AI Coaching Analysis (OpenAI-Compatible)
     is_nim = config.ai.is_nvidia_nim
     provider_name = "NVIDIA NIM" if is_nim else (config.ai.provider or "OpenAI-Compatible")
     print(f"\n[5. AI Coaching Analysis ({provider_name})]")
@@ -680,6 +732,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_studentapp(args, config)
     elif args.command == "studentapp-auth":
         return cmd_studentapp_auth(args, config)
+    elif args.command == "pdf":
+        return cmd_pdf(args, config)
     elif args.command == "auth":
         return cmd_auth(args, config)
     elif args.command == "status":

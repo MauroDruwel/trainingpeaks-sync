@@ -143,23 +143,41 @@ class SwimReservation:
 
 
 @dataclass
+class PdfTrainingSession:
+    """Represents a structured workout/training plan parsed from a PDF file."""
+    session_id: str
+    date: Optional[datetime] = None
+    title: str = "Swim Training"
+    total_distance_meters: float = 4500.0
+    duration_seconds: Optional[int] = None
+    content: str = ""
+    source_file: str = ""
+    sets: List[str] = field(default_factory=list)
+
+    @property
+    def date_str(self) -> Optional[str]:
+        return self.date.strftime("%Y-%m-%d") if self.date else None
+
+
+@dataclass
 class FusedWorkout:
     """
     Reconciled workout session combining watch telemetry, LAGO reservation,
-    and StudentApp booking. If watch was forgotten, has_watch_data is False.
+    StudentApp booking, and PDF training plans. If watch was forgotten, has_watch_data is False.
     """
     session_id: str
     sport: Sport
     start_time: datetime
     duration_seconds: int
     distance_meters: float
-    sources: List[str]  # e.g. ["strava", "lago", "studentapp"]
+    sources: List[str]  # e.g. ["strava", "lago", "studentapp", "pdf"]
     has_watch_data: bool
     title: str
     description: str = ""
     strava_activity: Optional[ActivitySummary] = None
     lago_reservation: Optional[SwimReservation] = None
     studentapp_reservation: Optional[SwimReservation] = None
+    pdf_training: Optional[PdfTrainingSession] = None
     tcx_path: Optional[str] = None
     analysis_path: Optional[str] = None
 

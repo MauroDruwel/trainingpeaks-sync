@@ -99,10 +99,26 @@ class GarminConfig:
 
 
 @dataclass
+class TrainingPdfConfig:
+    """Optional PDF training plans input source."""
+    enabled: bool = False
+    directory: Path = Path("trainings")
+    file_path: Optional[Path] = None
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if PDF directory or specific file exists."""
+        return bool(
+            (self.file_path and self.file_path.exists())
+            or (self.directory and self.directory.exists())
+        )
+
+
+@dataclass
 class FusionConfig:
     """Settings for multi-source workout reconciliation & synthetic activity generation."""
     time_window_minutes: int = 90
-    synthetic_swim_distance_meters: float = 2000.0
+    synthetic_swim_distance_meters: float = 4500.0
     synthetic_swim_duration_seconds: int = 6300  # 1h 45m (105 mins)
     auto_generate_synthetic_if_watch_forgotten: bool = True
 
@@ -200,6 +216,7 @@ class AppConfig:
     ai: AIConfig = field(default_factory=AIConfig)
     garmin: GarminConfig = field(default_factory=GarminConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
+    training_pdf: TrainingPdfConfig = field(default_factory=TrainingPdfConfig)
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
 
     @classmethod
@@ -296,11 +313,11 @@ class AppConfig:
         except ValueError:
             fusion_window = 90
 
-        fusion_dist_raw = os.getenv("SWIM_DEFAULT_DISTANCE_METERS", "2000.0")
+        fusion_dist_raw = os.getenv("SWIM_DEFAULT_DISTANCE_METERS", "4500.0")
         try:
             fusion_dist = float(fusion_dist_raw)
         except ValueError:
-            fusion_dist = 2000.0
+            fusion_dist = 4500.0
 
         fusion_dur_raw = os.getenv("SWIM_DEFAULT_DURATION_MINUTES", "105")
         try:
@@ -447,6 +464,24 @@ class AppConfig:
             token_file=garmin_token_file,
         )
 
+        # 8. Optional PDF Training Plans
+        pdf_enabled_env = os.getenv("TRAINING_PDF_ENABLED")
+        pdf_dir_env = os.getenv("TRAINING_PDF_DIR", "trainings")
+        pdf_path_env = os.getenv("TRAINING_PDF_PATH")
+        pdf_dir = Path(pdf_dir_env)
+        pdf_path = Path(pdf_path_env) if pdf_path_env else None
+        pdf_enabled = (
+            pdf_enabled_env.lower() in ("true", "1", "yes")
+            if pdf_enabled_env is not None
+            else bool(pdf_path and pdf_path.exists())
+        )
+
+        training_pdf = TrainingPdfConfig(
+            enabled=pdf_enabled,
+            directory=pdf_dir,
+            file_path=pdf_path,
+        )
+
         return cls(
             strava=strava,
             lago=lago,
@@ -455,5 +490,6 @@ class AppConfig:
             ai=ai,
             garmin=garmin,
             sync=sync,
+            training_pdf=training_pdf,
             processing=ProcessingConfig(),
         )
