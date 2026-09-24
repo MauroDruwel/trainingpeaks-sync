@@ -91,10 +91,12 @@ class GarminUploader:
             # Automatically categorize activity in Garmin Connect (e.g. swimming) and apply title
             try:
                 import time
-                time.sleep(1.5)
-                recent_acts = client.get_activities(0, 5)
-                if recent_acts:
-                    target_act = recent_acts[0]
+                target_act = None
+                for _ in range(3):
+                    time.sleep(2.0)
+                    recent_acts = client.get_activities(0, 5)
+                    if not recent_acts:
+                        continue
                     if start_time:
                         from datetime import datetime
                         if isinstance(start_time, datetime):
@@ -112,7 +114,13 @@ class GarminUploader:
                                 break
                             elif date_str in act_local or date_str in act_gmt:
                                 target_act = act
+                    else:
+                        target_act = recent_acts[0]
 
+                    if target_act:
+                        break
+
+                if target_act:
                     aid = target_act.get("activityId")
                     if aid:
                         sport_str = str(sport).lower() if sport else "swim"
