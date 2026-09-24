@@ -97,3 +97,36 @@ class TestGarminUploader(unittest.TestCase):
 
             result = uploader.upload_tcx(Path(tmp.name))
             self.assertFalse(result)
+
+    @patch("time.sleep", return_value=None)
+    @patch("garminconnect.Garmin")
+    def test_upload_tcx_categorization_and_matching(self, mock_garmin_cls, mock_sleep):
+        from datetime import datetime
+        mock_instance = MagicMock()
+        mock_instance.get_activities.return_value = [
+            {"activityId": 99901, "startTimeLocal": "2026-09-20 10:00:00"},
+            {"activityId": 99902, "startTimeLocal": "2026-09-21 15:00:00"},
+        ]
+        mock_garmin_cls.return_value = mock_instance
+
+        cfg = GarminConfig(email="user@example.com", password="pwd")
+        uploader = GarminUploader(cfg)
+
+        with tempfile.NamedTemporaryFile(suffix=".tcx") as tmp:
+            tmp.write(b"<TCX>content</TCX>")
+            tmp.flush()
+
+            result = uploader.upload_tcx(
+                Path(tmp.name),
+                title="🏊 Swim: LAGO Kortrijk Weide",
+                sport="swim",
+                start_time=datetime(2026, 9, 21, 15, 0, 0),
+            )
+            self.assertTrue(result)
+            mock_instance.set_activity_type.assert_called_once_with(
+                "99902", type_id=27, type_key="lap_swimming", parent_type_id=26
+            )
+            mock_instance.set_activity_name.assert_called_once_with(
+                "99902", "🏊 Swim: LAGO Kortrijk Weide"
+            )
+

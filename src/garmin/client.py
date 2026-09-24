@@ -63,6 +63,7 @@ class GarminUploader:
         tcx_path: Path,
         title: Optional[str] = None,
         sport: Optional[str] = None,
+        start_time: Optional[object] = None,
     ) -> bool:
         """
         Upload a TCX activity file to Garmin Connect.
@@ -91,9 +92,27 @@ class GarminUploader:
             try:
                 import time
                 time.sleep(1.5)
-                recent_acts = client.get_activities(0, 3)
+                recent_acts = client.get_activities(0, 5)
                 if recent_acts:
                     target_act = recent_acts[0]
+                    if start_time:
+                        from datetime import datetime
+                        if isinstance(start_time, datetime):
+                            date_str = start_time.strftime("%Y-%m-%d")
+                            time_str = start_time.strftime("%H:%M")
+                        else:
+                            date_str = str(start_time)[:10]
+                            time_str = str(start_time)[11:16] if len(str(start_time)) >= 16 else ""
+
+                        for act in recent_acts:
+                            act_local = str(act.get("startTimeLocal") or "")
+                            act_gmt = str(act.get("startTimeGMT") or "")
+                            if (date_str in act_local and time_str in act_local) or (date_str in act_gmt and time_str in act_gmt):
+                                target_act = act
+                                break
+                            elif date_str in act_local or date_str in act_gmt:
+                                target_act = act
+
                     aid = target_act.get("activityId")
                     if aid:
                         sport_str = str(sport).lower() if sport else "swim"

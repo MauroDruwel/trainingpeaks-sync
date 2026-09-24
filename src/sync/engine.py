@@ -221,7 +221,12 @@ class SyncEngine:
                                     logger.info("[Dry Run] Would upload previously synced workout to Garmin Connect: %s", tcx_p.name)
                                 else:
                                     logger.info("Uploading previously synced workout to Garmin Connect: %s", tcx_p.name)
-                                    if self.garmin_uploader.upload_tcx(tcx_p, title=workout.title, sport=workout.sport.value):
+                                    if self.garmin_uploader.upload_tcx(
+                                        tcx_p,
+                                        title=workout.title,
+                                        sport=workout.sport.value,
+                                        start_time=workout.start_time,
+                                    ):
                                         self.state_manager.mark_garmin_uploaded(workout.session_id, True)
                                         if workout.strava_activity:
                                             self.state_manager.mark_garmin_uploaded(workout.strava_activity.id, True)
@@ -340,6 +345,7 @@ class SyncEngine:
                         tcx_path,
                         title=workout.title,
                         sport=workout.sport.value,
+                        start_time=workout.start_time,
                     )
                 )
 
