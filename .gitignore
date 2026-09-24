@@ -1,8 +1,10 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode
 
-# Strava OAuth tokens (sensitive data)
+# Sensitive authentication tokens & local state
 .strava_tokens.json
+.garmin_tokens.json
+.studentapp_tokens.json
 .sync_state.json
 synced_activities/
 
