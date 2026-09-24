@@ -124,22 +124,26 @@ class SyncEngine:
                         if act_dict.get("id"):
                             strava_activities.append(ActivitySummary.from_strava_dict(act_dict))
 
-        # 2. Fetch LAGO reservations if configured
+        # 2. Fetch LAGO reservations if configured and enabled
         lago_reservations: List[SwimReservation] = []
-        if self.config.lago.is_configured or self.config.lago.enabled:
+        if self.config.lago.enabled and self.config.lago.is_configured:
             logger.info("Checking LAGO email reservations (IMAP / sample inbox)...")
             lago_reservations = self.lago_client.fetch_reservations()
 
-        # 3. Fetch StudentApp bookings if configured
+        # 3. Fetch StudentApp bookings if configured and enabled
         studentapp_reservations: List[SwimReservation] = []
-        if self.config.studentapp.is_configured or self.config.studentapp.enabled:
+        if self.config.studentapp.enabled and self.config.studentapp.is_configured:
             logger.info("Checking StudentApp pool bookings (HAR file / sports API)...")
             studentapp_reservations = self.studentapp_client.fetch_reservations()
 
-        # Guard: check if any data was found or any source configured
-        total_sources_active = bool(self.api_client or self.config.lago.is_configured or self.config.studentapp.is_configured)
+        # Guard: check if any data was found or any source configured & enabled
+        total_sources_active = bool(
+            self.api_client
+            or (self.config.lago.enabled and self.config.lago.is_configured)
+            or (self.config.studentapp.enabled and self.config.studentapp.is_configured)
+        )
         if not total_sources_active:
-            logger.error("No input sources configured (Strava, LAGO, or StudentApp). Please check .env settings.")
+            logger.error("No active input sources enabled (Strava, LAGO, or StudentApp). Please check .env settings.")
             return batch_summary
 
         # 4. Multi-Source Reconciler / Fusion
@@ -281,7 +285,7 @@ class SyncEngine:
                     logger.warning("AI analysis failed for %s: %s", workout.session_id, ai_err)
 
             # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
-            if self.garmin_uploader and self.garmin_uploader.is_configured():
+            if self.garmin_uploader and self.config.garmin.enabled and self.garmin_uploader.is_configured():
                 self.garmin_uploader.upload_tcx(tcx_path)
 
             # Optional email dispatch

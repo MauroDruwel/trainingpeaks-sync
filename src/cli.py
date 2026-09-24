@@ -401,14 +401,21 @@ def cmd_status(config: AppConfig) -> int:
     print("\n[2. LAGO Swimming Reservations]")
     print(f"  • Target Email: {config.lago.target_email}")
     print(f"  • Mailbox Account: {config.lago.imap_user or 'None'}")
-    if config.lago.is_configured:
-        print(f"  • IMAP Server: ✅ Configured ({config.lago.imap_server}:{config.lago.imap_port})")
+    if config.lago.enabled and config.lago.is_configured:
+        print(f"  • IMAP Server: ✅ Configured & Active ({config.lago.imap_server}:{config.lago.imap_port})")
+    elif config.lago.is_configured:
+        print(f"  • IMAP Server: ⚪ Disabled (LAGO_ENABLED=false)")
     else:
         print("  • IMAP Server: ⚪ Not configured (set LAGO_IMAP_SERVER and LAGO_IMAP_PASSWORD in .env)")
 
     # 3. StudentApp Bookings
     print("\n[3. StudentApp Bookings]")
-    status_str = "✅ Active" if (config.studentapp.enabled or config.studentapp.is_configured) else "⚪ Disabled"
+    if config.studentapp.enabled and config.studentapp.is_configured:
+        status_str = "✅ Active"
+    elif config.studentapp.is_configured:
+        status_str = "⚪ Disabled (STUDENTAPP_ENABLED=false)"
+    else:
+        status_str = "⚪ Disabled"
     print(f"  • Status: {status_str}")
     if config.studentapp.email:
         pw_indicator = "••••••••" if config.studentapp.password else "⚪ Missing"
@@ -437,7 +444,7 @@ def cmd_status(config: AppConfig) -> int:
     print(f"  • Default duration: {config.fusion.synthetic_swim_duration_seconds // 60} mins")
     print(f"  • Matching time window: ±{config.fusion.time_window_minutes} mins")
 
-    # 5. AI Configuration
+    # 5. AI Coaching Analysis (OpenAI-Compatible)
     is_nim = config.ai.is_nvidia_nim
     provider_name = "NVIDIA NIM" if is_nim else (config.ai.provider or "OpenAI-Compatible")
     print(f"\n[5. AI Coaching Analysis ({provider_name})]")
@@ -472,10 +479,12 @@ def cmd_status(config: AppConfig) -> int:
     print(f"  • State File: {config.sync.state_file.resolve()}")
     print(f"  • Last Sync: {state_mgr.get_last_sync() or 'Never'}")
     print(f"  • Total Synced Activities: {state_mgr.get_total_synced_count()}")
-    if config.garmin.is_configured:
+    if config.garmin.enabled and config.garmin.is_configured:
         token_path = Path(config.garmin.token_file)
         token_status = "Tokens cached" if token_path.exists() else "Credentials configured"
         print(f"  • Garmin Connect Bridge: ✅ Active ({config.garmin.email or 'Cached session'}, {token_status})")
+    elif config.garmin.is_configured:
+        print("  • Garmin Connect Bridge: ⚪ Disabled (GARMIN_ENABLED=false)")
     else:
         print("  • Garmin Connect Bridge: ⚪ Not configured (set GARMIN_EMAIL & GARMIN_PASSWORD in .env)")
 
