@@ -182,6 +182,41 @@ class TestSyncEngine(unittest.TestCase):
              patch("src.sync.engine.format_xml_file"):
             summary = engine.sync()
             self.assertEqual(summary.newly_synced, 1)
+            mock_garmin.create_manual_swim_activity.assert_called_once()
+
+    def test_sync_with_garmin_uploader_run(self):
+        self.config.garmin.enabled = True
+        mock_oauth = MagicMock()
+        mock_token = AthleteToken(777, "Mauro", "tok", "ref", 9999999999)
+        mock_oauth.get_valid_token.return_value = mock_token
+
+        mock_api = MagicMock()
+        mock_api.list_activities.return_value = [
+            {"id": 3002, "name": "Morning Run", "type": "Run", "start_date": "2026-09-23T08:00:00Z"}
+        ]
+
+        def fake_download(ath_id, act_id, dest):
+            with open(dest, "w") as f:
+                f.write("<TCX>run</TCX>")
+            return True
+
+        mock_api.download_tcx.side_effect = fake_download
+        mock_garmin = MagicMock()
+        mock_garmin.is_configured.return_value = True
+        mock_garmin.upload_tcx.return_value = True
+
+        engine = SyncEngine(
+            config=self.config,
+            oauth_client=mock_oauth,
+            api_client=mock_api,
+            state_manager=self.state_mgr,
+            garmin_uploader=mock_garmin,
+        )
+
+        with patch("src.sync.engine.validate_tcx_file", return_value=(True, MagicMock())), \
+             patch("src.sync.engine.format_xml_file"):
+            summary = engine.sync()
+            self.assertEqual(summary.newly_synced, 1)
             mock_garmin.upload_tcx.assert_called_once()
 
     def test_sync_with_garmin_uploader_disabled(self):
@@ -248,7 +283,7 @@ class TestSyncEngine(unittest.TestCase):
 
         mock_garmin = MagicMock()
         mock_garmin.is_configured.return_value = True
-        mock_garmin.upload_tcx.return_value = True
+        mock_garmin.create_manual_swim_activity.return_value = "99999"
 
         engine = SyncEngine(
             config=self.config,
@@ -260,7 +295,7 @@ class TestSyncEngine(unittest.TestCase):
 
         summary = engine.sync()
         self.assertEqual(summary.already_synced, 1)
-        mock_garmin.upload_tcx.assert_called_once()
+        mock_garmin.create_manual_swim_activity.assert_called_once()
         self.assertTrue(self.state_mgr.is_garmin_uploaded(4001))
 
 

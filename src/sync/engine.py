@@ -221,7 +221,7 @@ class SyncEngine:
                                     logger.info("[Dry Run] Would upload previously synced workout to Garmin Connect: %s", tcx_p.name)
                                 else:
                                     logger.info("Uploading previously synced workout to Garmin Connect: %s", tcx_p.name)
-                                    if not workout.has_watch_data and workout.sport.value.lower() == "swim":
+                                    if workout.sport.value.lower() == "swim":
                                         garmin_ok = bool(self.garmin_uploader.create_manual_swim_activity(
                                             start_time=workout.start_time,
                                             distance_meters=workout.distance_meters,
@@ -350,7 +350,7 @@ class SyncEngine:
             # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
             garmin_uploaded = False
             if self.garmin_uploader and self.config.garmin.enabled and self.garmin_uploader.is_configured():
-                if not workout.has_watch_data and workout.sport.value.lower() == "swim":
+                if workout.sport.value.lower() == "swim":
                     aid = self.garmin_uploader.create_manual_swim_activity(
                         start_time=workout.start_time,
                         distance_meters=workout.distance_meters,
