@@ -178,6 +178,37 @@ class SyncEngine:
                     already_synced = self.state_manager.is_synced(workout.strava_activity.id)
 
                 if already_synced:
+                    # If Garmin uploader is enabled, check if this activity still needs to be pushed to Garmin Connect
+                    is_uploaded = self.state_manager.is_garmin_uploaded(workout.session_id)
+                    if not is_uploaded and workout.strava_activity:
+                        is_uploaded = self.state_manager.is_garmin_uploaded(workout.strava_activity.id)
+
+                    if (
+                        self.garmin_uploader
+                        and self.config.garmin.enabled
+                        and self.garmin_uploader.is_configured()
+                        and not is_uploaded
+                    ):
+                        rec = self.state_manager.get_synced_activity(workout.session_id)
+                        if not rec and workout.strava_activity:
+                            rec = self.state_manager.get_synced_activity(workout.strava_activity.id)
+                        tcx_path_str = rec.get("tcx_path", "") if rec else None
+                        if tcx_path_str:
+                            tcx_p = Path(tcx_path_str)
+                            if not tcx_p.is_absolute():
+                                tcx_p = self.config.sync.output_dir.parent / tcx_p
+                            if not tcx_p.is_file():
+                                tcx_p = self.config.sync.output_dir / Path(tcx_path_str).name
+                            if tcx_p.is_file():
+                                if dry_run:
+                                    logger.info("[Dry Run] Would upload previously synced workout to Garmin Connect: %s", tcx_p.name)
+                                else:
+                                    logger.info("Uploading previously synced workout to Garmin Connect: %s", tcx_p.name)
+                                    if self.garmin_uploader.upload_tcx(tcx_p):
+                                        self.state_manager.mark_garmin_uploaded(workout.session_id, True)
+                                        if workout.strava_activity:
+                                            self.state_manager.mark_garmin_uploaded(workout.strava_activity.id, True)
+
                     logger.debug("Workout %s already synced, skipping.", workout.session_id)
                     batch_summary.already_synced += 1
                     continue
@@ -285,8 +316,9 @@ class SyncEngine:
                     logger.warning("AI analysis failed for %s: %s", workout.session_id, ai_err)
 
             # Garmin Connect Bridge (automatically syncs to TrainingPeaks)
+            garmin_uploaded = False
             if self.garmin_uploader and self.config.garmin.enabled and self.garmin_uploader.is_configured():
-                self.garmin_uploader.upload_tcx(tcx_path)
+                garmin_uploaded = bool(self.garmin_uploader.upload_tcx(tcx_path))
 
             # Optional email dispatch
             if self.email_uploader.can_send():
@@ -304,6 +336,7 @@ class SyncEngine:
                 analysis_path=analysis_path,
                 sources=workout.sources,
                 has_watch_data=workout.has_watch_data,
+                garmin_uploaded=garmin_uploaded,
             )
 
             # Also record underlying Strava ID if present to maintain backward compatibility
@@ -319,6 +352,7 @@ class SyncEngine:
                     analysis_path=analysis_path,
                     sources=workout.sources,
                     has_watch_data=workout.has_watch_data,
+                    garmin_uploaded=garmin_uploaded,
                 )
 
             logger.info("Successfully synced %s to %s", workout.title, tcx_path.name)

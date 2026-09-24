@@ -59,4 +59,23 @@ class TestSyncStateManager(unittest.TestCase):
 
         manager = SyncStateManager(self.state_file)
         self.assertEqual(manager.get_total_synced_count(), 0)
+
+    def test_garmin_uploaded_tracking(self):
+        manager = SyncStateManager(self.state_file)
+        manager.record_synced(
+            activity_id="act_1",
+            athlete_id=None,
+            name="Swim",
+            sport="Swim",
+            start_date="2026-09-24T08:00:00Z",
+            tcx_path="/tmp/act_1.tcx",
+            garmin_uploaded=False,
+        )
+        self.assertFalse(manager.is_garmin_uploaded("act_1"))
+        manager.mark_garmin_uploaded("act_1", True)
+        self.assertTrue(manager.is_garmin_uploaded("act_1"))
+
+        # Reload
+        new_mgr = SyncStateManager(self.state_file)
+        self.assertTrue(new_mgr.is_garmin_uploaded("act_1"))
         self.assertFalse(manager.is_synced(999))

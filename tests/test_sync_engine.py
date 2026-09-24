@@ -218,3 +218,49 @@ class TestSyncEngine(unittest.TestCase):
             self.assertEqual(summary.newly_synced, 1)
             mock_garmin.upload_tcx.assert_not_called()
 
+    def test_sync_reuploads_unuploaded_garmin_activities(self):
+        self.config.garmin.enabled = True
+        mock_oauth = MagicMock()
+        mock_token = AthleteToken(777, "Mauro", "tok", "ref", 9999999999)
+        mock_oauth.get_valid_token.return_value = mock_token
+
+        mock_api = MagicMock()
+        mock_api.list_activities.return_value = [
+            {"id": 4001, "name": "Past Swim", "type": "Swim", "start_date": "2026-09-23T08:00:00Z"}
+        ]
+
+        # Pre-record activity in state manager as already synced, but garmin_uploaded=False
+        fake_tcx = self.output_dir / "test_past.tcx"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        fake_tcx.write_text("<TCX>past</TCX>")
+
+        self.state_mgr.record_synced(
+            activity_id=4001,
+            athlete_id=777,
+            name="Past Swim",
+            sport="Swim",
+            start_date="2026-09-23T08:00:00Z",
+            tcx_path=str(fake_tcx),
+            garmin_uploaded=False,
+        )
+        self.assertTrue(self.state_mgr.is_synced(4001))
+        self.assertFalse(self.state_mgr.is_garmin_uploaded(4001))
+
+        mock_garmin = MagicMock()
+        mock_garmin.is_configured.return_value = True
+        mock_garmin.upload_tcx.return_value = True
+
+        engine = SyncEngine(
+            config=self.config,
+            oauth_client=mock_oauth,
+            api_client=mock_api,
+            state_manager=self.state_mgr,
+            garmin_uploader=mock_garmin,
+        )
+
+        summary = engine.sync()
+        self.assertEqual(summary.already_synced, 1)
+        mock_garmin.upload_tcx.assert_called_once()
+        self.assertTrue(self.state_mgr.is_garmin_uploaded(4001))
+
+

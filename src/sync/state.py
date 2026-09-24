@@ -61,9 +61,21 @@ class SyncStateManager:
         """Check if an activity has already been processed."""
         return str(activity_id) in self._state.get("synced_activities", {})
 
-    def get_synced_activity(self, activity_id: int) -> Optional[Dict[str, Any]]:
+    def get_synced_activity(self, activity_id: Any) -> Optional[Dict[str, Any]]:
         """Retrieve stored details for a previously synced activity."""
         return self._state.get("synced_activities", {}).get(str(activity_id))
+
+    def is_garmin_uploaded(self, activity_id: Any) -> bool:
+        """Check if an activity was successfully uploaded to Garmin Connect."""
+        act = self.get_synced_activity(activity_id)
+        return bool(act and act.get("garmin_uploaded", False))
+
+    def mark_garmin_uploaded(self, activity_id: Any, uploaded: bool = True) -> None:
+        """Update Garmin upload status for a recorded activity."""
+        key = str(activity_id)
+        if "synced_activities" in self._state and key in self._state["synced_activities"]:
+            self._state["synced_activities"][key]["garmin_uploaded"] = uploaded
+            self.save()
 
     def record_synced(
         self,
@@ -77,6 +89,7 @@ class SyncStateManager:
         analysis_path: Optional[str] = None,
         sources: Optional[List[str]] = None,
         has_watch_data: bool = True,
+        garmin_uploaded: bool = False,
     ) -> None:
         """Record activity as successfully synced and persist state."""
         if "synced_activities" not in self._state:
@@ -94,6 +107,7 @@ class SyncStateManager:
             "analysis_path": analysis_path,
             "sources": sources or ["strava"],
             "has_watch_data": has_watch_data,
+            "garmin_uploaded": garmin_uploaded,
         }
         self._state["last_sync"] = now_iso
         self.save()
