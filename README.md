@@ -2,11 +2,11 @@
 
 [![Mauro Quality Gate](https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-2ea44f?style=flat&logo=github)](https://github.com/MauroDruwel/quality-gate)
 [![CI](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-176%20passed-brightgreen.svg)](#-running-tests)
+[![Tests](https://img.shields.io/badge/tests-192%20passed-brightgreen.svg)](#-running-tests)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/github/license/MauroDruwel/trainingpeaks-sync)](LICENSE)
 
-Multi-source workout aggregator & synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Fuses watch telemetry from **Strava**, swimming lane reservation tickets from **LAGO**, and university pool bookings from your **StudentApp** into enriched, verified TrainingPeaks activities — with **NVIDIA NIM AI coaching powered by [NIMStats](https://nimstats.maurodruwel.be/)**, automatic duration preservation during pool rest pauses, and synthetic workout generation if you forget your watch.
+Multi-source workout aggregator & synchronization bridge for [TrainingPeaks](https://www.trainingpeaks.com/). Fuses watch telemetry from **Strava**, swimming lane reservation tickets from **LAGO**, and university pool bookings from your **StudentApp** into enriched, verified TrainingPeaks activities — with **Garmin Connect Auto-Sync Bridge**, **NVIDIA NIM AI coaching powered by [NIMStats](https://nimstats.maurodruwel.be/)**, automatic duration preservation during pool rest pauses, and synthetic workout generation if you forget your watch.
 
 ---
 
@@ -38,7 +38,7 @@ When heading out for a swim, your session is captured across three distinct chan
                    │ TrainingPeaks Activity (.tcx) │
                    │ + AI Coaching Report (.md)    │
                    │   (NVIDIA NIM via NIMStats)   │
-                   │ + Optional Email Auto-Upload  │
+                   │ + Garmin Auto-Sync Bridge     │
                    └───────────────────────────────┘
 ```
 
@@ -53,11 +53,11 @@ When heading out for a swim, your session is captured across three distinct chan
 - 🏊 **Full Slot Duration Preservation**: Resting at the pool wall or auto-pauses in Strava won't truncate your workout. Automatically expands the session to your booked slot (e.g. 105 mins / 1h 45m) in both metadata and TCX trackpoints.
 - ⌚ **"Forgot My Watch" Synthetic TCX**: Forgot your watch at home? The engine synthesizes a valid, TrainingPeaks-compliant TCX file with paced lap intervals from your verified reservation so your calendar never misses a workout.
 - 🔗 **Smart Multi-Source Reconciler**: Correlates sessions occurring within a configurable window ($\pm 90$ mins) and enriches activities with facility names, reservation codes, and telemetry.
+- ⌚ **Garmin Connect Auto-Sync Bridge**: Uploads formatted TCX activities to Garmin Connect, which automatically syncs them to TrainingPeaks via Garmin's official partner sync.
 - ⏱️ **Headless & Cron-Ready**: Designed for unattended background automation via standard `crontab`, `systemd`, or built-in `--daemon` loop.
 - 🧠 **NVIDIA NIM AI Coaching + NIMStats**: Connects to the NVIDIA NIM API (`https://integrate.api.nvidia.com/v1`) and dynamically retrieves the highest-performing LLM from **[NIMStats](https://nimstats.maurodruwel.be/)** based on benchmarked intelligence, uptime, and throughput. Also supports local models (Ollama, LM Studio) and cloud endpoints (OpenRouter, Groq, DeepSeek).
 - 💾 **Idempotent Atomic State**: Persisted safely in `.sync_state.json` to prevent duplicates across runs.
-- 📧 **Direct TrainingPeaks Upload**: Optionally emails generated `.tcx` workout files directly to your personal TrainingPeaks upload mailbox (`username.upload@trainingpeaks.com`).
-- 🧪 **176 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, NIMStats retrieval, and CLI handlers.
+- 🧪 **192 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, Garmin Connect upload, NIMStats retrieval, and CLI handlers.
 
 ---
 
@@ -68,7 +68,9 @@ The CLI tool is available as `tp-sync` (or `trainingpeaks-sync`):
 | Command | What it does | Example |
 | :--- | :--- | :--- |
 | `tp-sync sync` | Run multi-source synchronization | `tp-sync sync --once` |
+| `tp-sync sync --force` | Re-sync and push activities even if previously recorded | `tp-sync sync --force` |
 | `tp-sync sync --daemon` | Run continuous background sync loop | `tp-sync sync --daemon --interval 3600` |
+| `tp-sync garmin-auth` | Authenticate with Garmin Connect & save tokens | `tp-sync garmin-auth` |
 | `tp-sync lago` | Inspect recent LAGO reservation confirmations from email | `tp-sync lago --days 7` |
 | `tp-sync studentapp` | Inspect StudentApp pool bookings from HAR / API | `tp-sync studentapp --har session.har` |
 | `tp-sync status` | Inspect pipeline status, credentials, and sync history | `tp-sync status` |
@@ -153,14 +155,12 @@ All configuration is managed via environment variables in `.env`:
 | `AI_MODEL` | `auto` | Model name or `auto` for live NIMStats selection |
 | `AI_LANGUAGE` | `English` | Coaching report language |
 | `AI_TEMPERATURE` | `0.3` | Model temperature |
-| **TrainingPeaks Output** | | |
-| `ACTIVITIES_OUTPUT_DIR` | `./synced_activities` | Local directory for exported `.tcx` files |
+| **TrainingPeaks & Garmin Connect Bridge** | | |
+| `GARMIN_EMAIL` | — | Garmin Connect account email (auto-syncs into TrainingPeaks) |
+| `GARMIN_PASSWORD` | — | Garmin Connect account password |
+| `GARMIN_TOKEN_FILE` | `.garmin_tokens.json` | Path to cached Garmin Connect session tokens |
+| `SYNC_OUTPUT_DIR` | `./synced_activities` | Local directory for exported `.tcx` files (for manual drag-and-drop) |
 | `SYNC_STATE_FILE` | `.sync_state.json` | Path to persistent sync state file |
-| `TP_EMAIL` | — | Personal TrainingPeaks upload email (`user.upload@...`) |
-| `SMTP_SERVER` | — | SMTP server for automated TCX email delivery |
-| `SMTP_PORT` | `587` | SMTP port |
-| `SMTP_USERNAME` | — | SMTP username |
-| `SMTP_PASSWORD` | — | SMTP password |
 
 ---
 
