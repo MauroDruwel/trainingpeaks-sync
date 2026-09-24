@@ -68,7 +68,7 @@ class GarminUploader:
         """
         Upload a TCX activity file to Garmin Connect.
         When connected, Garmin Connect automatically forwards the workout to TrainingPeaks.
-        Also categorizes activity (e.g. lap_swimming) and sets the activity name.
+        Also categorizes activity (e.g. swimming) and sets the activity name.
         """
         if not self.is_configured():
             logger.debug("Garmin Connect upload not configured, skipping.")
@@ -88,7 +88,7 @@ class GarminUploader:
                 tcx_path.name,
             )
 
-            # Automatically categorize activity in Garmin Connect (e.g. lap_swimming) and apply title
+            # Automatically categorize activity in Garmin Connect (e.g. swimming) and apply title
             try:
                 import time
                 time.sleep(1.5)
@@ -117,8 +117,8 @@ class GarminUploader:
                     if aid:
                         sport_str = str(sport).lower() if sport else "swim"
                         if "swim" in sport_str:
-                            client.set_activity_type(str(aid), type_id=27, type_key="lap_swimming", parent_type_id=26)
-                            logger.info("Categorized Garmin activity %s as lap_swimming", aid)
+                            client.set_activity_type(str(aid), type_id=26, type_key="swimming", parent_type_id=17)
+                            logger.info("Categorized Garmin activity %s as swimming", aid)
                         elif "run" in sport_str:
                             client.set_activity_type(str(aid), type_id=1, type_key="running", parent_type_id=17)
                         elif "bike" in sport_str or "ride" in sport_str:

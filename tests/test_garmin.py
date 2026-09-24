@@ -124,7 +124,7 @@ class TestGarminUploader(unittest.TestCase):
             )
             self.assertTrue(result)
             mock_instance.set_activity_type.assert_called_once_with(
-                "99902", type_id=27, type_key="lap_swimming", parent_type_id=26
+                "99902", type_id=26, type_key="swimming", parent_type_id=17
             )
             mock_instance.set_activity_name.assert_called_once_with(
                 "99902", "🏊 Swim: LAGO Kortrijk Weide"
