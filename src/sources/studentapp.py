@@ -5,9 +5,10 @@ Supports parsing HTTP Archive (.har) export files or querying the StudentApp spo
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 import requests
 
@@ -164,10 +165,174 @@ class StudentAppParser:
 
 
 class StudentAppClient:
-    """Retrieves pool bookings from a configured HAR file or live student sports API."""
+    """
+    Retrieves pool bookings from a live student sports API (supporting direct email/password login),
+    token caching, or an optional offline HAR file export.
+    """
 
     def __init__(self, config: StudentAppConfig):
         self.config = config
+        self.token_path = Path(self.config.token_file)
+
+    def is_configured(self) -> bool:
+        """Check if StudentApp credentials, tokens, or files are configured."""
+        return self.config.is_configured
+
+    def _load_cached_token_data(self) -> Optional[Dict[str, Any]]:
+        """Load stored token data from token file if present and valid."""
+        if not self.token_path.is_file():
+            return None
+        try:
+            with open(self.token_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except Exception as err:
+            logger.warning("Could not read StudentApp token file: %s", err)
+            return None
+
+    def _save_token_data(self, data: Dict[str, Any]) -> None:
+        """Save token data to token file."""
+        try:
+            self.token_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.token_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as err:
+            logger.warning("Could not save StudentApp token file: %s", err)
+
+    def get_valid_token(self) -> Optional[str]:
+        """Get an existing valid Bearer token or authenticate with email/password."""
+        if self.config.api_token:
+            return self.config.api_token
+
+        cached = self._load_cached_token_data()
+        if cached and "access_token" in cached and cached["access_token"]:
+            expires_at = cached.get("expires_at")
+            if expires_at is None or expires_at > time.time() + 60:
+                return cached["access_token"]
+
+        # Attempt login if credentials are provided
+        if self.config.email and self.config.password:
+            ok, _ = self.login()
+            if ok:
+                fresh = self._load_cached_token_data()
+                if fresh and "access_token" in fresh and fresh["access_token"]:
+                    return fresh["access_token"]
+
+        return None
+
+    def get_cached_cookies(self) -> Dict[str, str]:
+        """Get any cached session cookies."""
+        cached = self._load_cached_token_data()
+        if cached and isinstance(cached.get("cookies"), dict):
+            return cached["cookies"]
+        return {}
+
+    def get_login_endpoint(self) -> Optional[str]:
+        """Resolve the login endpoint URL."""
+        if self.config.login_url:
+            return self.config.login_url
+        if self.config.api_url:
+            base = self.config.api_url.rstrip("/")
+            if "/reservations" in base:
+                return base.replace("/reservations", "/auth/login")
+            if "/bookings" in base:
+                return base.replace("/bookings", "/auth/login")
+            return f"{base}/auth/login"
+        return None
+
+    def login(self) -> Tuple[bool, str]:
+        """Authenticate using email and password, caching the resulting token/cookies."""
+        if not (self.config.email and self.config.password):
+            return False, "StudentApp email or password not provided (set STUDENTAPP_EMAIL and STUDENTAPP_PASSWORD in .env)."
+
+        login_url = self.get_login_endpoint()
+        if not login_url:
+            return False, "Cannot determine StudentApp login endpoint (set STUDENTAPP_LOGIN_URL or STUDENTAPP_API_URL in .env)."
+
+        payload = {
+            "email": self.config.email,
+            "username": self.config.email,
+            "password": self.config.password,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "TrainingPeaksSync/2.0 (Mauro Edition)",
+        }
+
+        try:
+            logger.info("Authenticating to StudentApp at: %s", login_url)
+            session = requests.Session()
+            resp = session.post(login_url, json=payload, headers=headers, timeout=20)
+            resp.raise_for_status()
+
+            token = ""
+            expires_at = None
+            token_data: Dict[str, Any] = {}
+
+            try:
+                data = resp.json()
+                token_data = data if isinstance(data, dict) else {}
+                for k in ["access_token", "token", "jwt", "bearer", "id_token"]:
+                    if k in token_data and isinstance(token_data[k], str):
+                        token = token_data[k]
+                        break
+                if not token and isinstance(token_data.get("data"), dict):
+                    inner = token_data["data"]
+                    for k in ["access_token", "token", "jwt"]:
+                        if k in inner and isinstance(inner[k], str):
+                            token = inner[k]
+                            break
+
+                expires_in = token_data.get("expires_in")
+                if isinstance(expires_in, (int, float)):
+                    expires_at = time.time() + expires_in
+            except Exception:
+                pass
+
+            cookies = session.cookies.get_dict()
+
+            save_payload = {
+                "email": self.config.email,
+                "access_token": token,
+                "expires_at": expires_at,
+                "cookies": cookies,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._save_token_data(save_payload)
+            logger.info("StudentApp login successful for %s (session cached).", self.config.email)
+            return True, f"Successfully logged into StudentApp as '{self.config.email}'."
+        except Exception as err:
+            logger.error("StudentApp login failed: %s", err)
+            return False, f"StudentApp login failed: {err}"
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """Test connection and authentication to StudentApp."""
+        if not self.is_configured():
+            return False, "StudentApp is not configured (set STUDENTAPP_EMAIL and STUDENTAPP_PASSWORD in .env)."
+
+        # 1. If HAR file exists
+        if self.config.har_path and self.config.har_path.is_file():
+            bookings = StudentAppParser.parse_har_file(self.config.har_path)
+            return True, f"HAR file verified: found {len(bookings)} booking(s)."
+
+        # 2. If email/password configured
+        if self.config.email and self.config.password:
+            login_url = self.get_login_endpoint()
+            if not login_url and not self.config.api_url:
+                return False, "STUDENTAPP_EMAIL is configured, but STUDENTAPP_API_URL or STUDENTAPP_LOGIN_URL is missing in .env."
+            ok, msg = self.login()
+            return ok, msg
+
+        # 3. If explicit API token
+        if self.config.api_url and self.config.api_token:
+            return True, f"StudentApp API token configured for {self.config.api_url}."
+
+        # 4. If cached token exists
+        cached = self._load_cached_token_data()
+        if cached and (cached.get("access_token") or cached.get("cookies")):
+            return True, f"StudentApp cached session active for '{cached.get('email', 'athlete')}'."
+
+        return False, "StudentApp configuration is incomplete."
 
     def fetch_reservations(self) -> List[SwimReservation]:
         """Fetch reservations from HAR file or live API endpoint."""
@@ -177,23 +342,36 @@ class StudentAppClient:
         if self.config.har_path:
             reservations.extend(StudentAppParser.parse_har_file(self.config.har_path))
 
-        # 2. Live API query if endpoint and token are configured
-        if self.config.api_url and self.config.api_token:
+        # 2. Live API query if endpoint is configured
+        if self.config.api_url:
             api_reservations = self._fetch_from_api()
             reservations.extend(api_reservations)
 
-        return reservations
+        # Deduplicate by reservation_id
+        seen_ids = set()
+        unique: List[SwimReservation] = []
+        for r in reservations:
+            if r.reservation_id not in seen_ids:
+                seen_ids.add(r.reservation_id)
+                unique.append(r)
+
+        return unique
 
     def _fetch_from_api(self) -> List[SwimReservation]:
-        """Query live StudentApp API for reservations."""
+        """Query live StudentApp API for reservations using cached or authenticated session."""
+        token = self.get_valid_token()
+        cookies = self.get_cached_cookies()
+
         headers = {
-            "Authorization": f"Bearer {self.config.api_token}",
             "Content-Type": "application/json",
             "User-Agent": "TrainingPeaksSync/2.0 (Mauro Edition)",
         }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
         try:
             logger.info("Querying StudentApp API: %s", self.config.api_url)
-            resp = requests.get(self.config.api_url, headers=headers, timeout=20)
+            resp = requests.get(self.config.api_url, headers=headers, cookies=cookies, timeout=20)
             resp.raise_for_status()
             payload = resp.json()
             return StudentAppParser.extract_from_payload(payload, url=self.config.api_url)

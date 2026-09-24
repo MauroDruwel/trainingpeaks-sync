@@ -124,6 +124,22 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a .har HTTP archive export file to parse bookings from",
     )
+    student_parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Test StudentApp connection and authentication",
+    )
+    student_parser.add_argument(
+        "--login",
+        action="store_true",
+        help="Authenticate with email/password and refresh cached session",
+    )
+
+    # --- StudentApp Auth command ---
+    subparsers.add_parser(
+        "studentapp-auth",
+        help="Authenticate with StudentApp using email/password and cache session tokens",
+    )
 
     # --- Auth command ---
     auth_parser = subparsers.add_parser("auth", help="Authorize a Strava athlete via OAuth")
@@ -285,17 +301,35 @@ def cmd_studentapp(args: argparse.Namespace, config: AppConfig) -> int:
     print("\n🎓 StudentApp Pool Booking Inspector")
     print("-" * 50)
 
+    client = StudentAppClient(config.studentapp)
+
+    if getattr(args, "login", False):
+        return cmd_studentapp_auth(args, config)
+
+    if getattr(args, "test", False):
+        print("Testing StudentApp connection & authentication...")
+        ok, msg = client.test_connection()
+        if ok:
+            print(f"✅ {msg}")
+            return 0
+        else:
+            print(f"❌ {msg}")
+            return 1
+
     har_path = Path(args.har) if args.har else config.studentapp.har_path
     if har_path:
         print(f"Reading HAR file: {har_path}")
         reservations = StudentAppParser.parse_har_file(har_path)
     else:
-        client = StudentAppClient(config.studentapp)
         reservations = client.fetch_reservations()
 
     if not reservations:
         print("No StudentApp bookings found.")
-        print("Tip: Provide a .har export file using --har <path> or configure STUDENTAPP_HAR_PATH in .env")
+        print("Tips:")
+        print("  • Configure STUDENTAPP_EMAIL and STUDENTAPP_PASSWORD in .env")
+        print("  • Run 'tp-sync studentapp --test' to verify connection")
+        print("  • Run 'tp-sync studentapp --login' to authenticate and cache session")
+        print("  • Or provide a .har export file using --har <path>")
         return 0
 
     print(f"Found {len(reservations)} StudentApp booking(s):\n")
@@ -374,16 +408,27 @@ def cmd_status(config: AppConfig) -> int:
 
     # 3. StudentApp Bookings
     print("\n[3. StudentApp Bookings]")
-    if config.studentapp.har_path:
-        har_status = "✅ Found" if config.studentapp.har_path.exists() else "❌ File not found"
-        print(f"  • HAR File: {config.studentapp.har_path} ({har_status})")
+    status_str = "✅ Active" if (config.studentapp.enabled or config.studentapp.is_configured) else "⚪ Disabled"
+    print(f"  • Status: {status_str}")
+    if config.studentapp.email:
+        pw_indicator = "••••••••" if config.studentapp.password else "⚪ Missing"
+        print(f"  • Account: {config.studentapp.email} (Password: {pw_indicator})")
     else:
-        print("  • HAR File: ⚪ None specified")
+        print("  • Account: ⚪ Not configured (set STUDENTAPP_EMAIL & STUDENTAPP_PASSWORD in .env)")
+
+    token_path = Path(config.studentapp.token_file)
+    if token_path.is_file():
+        print(f"  • Session Cache: 🟢 Cached ({config.studentapp.token_file})")
+    elif config.studentapp.email and config.studentapp.password:
+        print("  • Session Cache: 🟡 Ready to authenticate on next sync")
+    else:
+        print("  • Session Cache: ⚪ None")
 
     if config.studentapp.api_url:
-        print(f"  • Live API: {config.studentapp.api_url}")
-    else:
-        print("  • Live API: ⚪ Not configured")
+        print(f"  • API Endpoint: {config.studentapp.api_url}")
+    if config.studentapp.har_path:
+        har_status = "✅ Found" if config.studentapp.har_path.exists() else "❌ File not found"
+        print(f"  • HAR File (Fallback): {config.studentapp.har_path} ({har_status})")
 
     # 4. Reconciliation & Synthetic Workouts
     print("\n[4. Multi-Source Fusion & Watch-Forgotten Support]")
@@ -461,6 +506,36 @@ def cmd_garmin_auth(args: argparse.Namespace, config: AppConfig) -> int:
         print(f"💾 Session tokens saved to: {config.garmin.token_file}")
         print("🎉 Garmin Connect bridge is active! Any new synced workouts will automatically")
         print("   push to Garmin Connect and appear on your TrainingPeaks calendar!\n")
+        return 0
+    else:
+        print(f"\n❌ {msg}\n")
+        return 1
+
+
+def cmd_studentapp_auth(args: argparse.Namespace, config: AppConfig) -> int:
+    """Authenticate with StudentApp using email and password, caching session tokens."""
+    print("\n🎓 StudentApp Authentication")
+    print("-" * 55)
+
+    if not (config.studentapp.email and config.studentapp.password):
+        print("❌ STUDENTAPP_EMAIL and STUDENTAPP_PASSWORD are not set in your .env file.")
+        print("Please add to your .env file:")
+        print("  STUDENTAPP_EMAIL=your_student_email@example.com")
+        print("  STUDENTAPP_PASSWORD=your_studentapp_password")
+        return 1
+
+    client = StudentAppClient(config.studentapp)
+    endpoint = client.get_login_endpoint()
+    if not endpoint:
+        print("❌ Cannot determine StudentApp login endpoint.")
+        print("Please set STUDENTAPP_LOGIN_URL or STUDENTAPP_API_URL in .env.")
+        return 1
+
+    print(f"Authenticating as: {config.studentapp.email}...")
+    success, msg = client.login()
+    if success:
+        print(f"\n✅ {msg}")
+        print(f"💾 Session tokens saved to: {config.studentapp.token_file}\n")
         return 0
     else:
         print(f"\n❌ {msg}\n")
@@ -592,6 +667,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_lago(args, config)
     elif args.command == "studentapp":
         return cmd_studentapp(args, config)
+    elif args.command == "studentapp-auth":
+        return cmd_studentapp_auth(args, config)
     elif args.command == "auth":
         return cmd_auth(args, config)
     elif args.command == "status":

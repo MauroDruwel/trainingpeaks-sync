@@ -180,3 +180,35 @@ class TestCLI(unittest.TestCase):
 
             exit_code = main(["garmin-auth"])
             self.assertEqual(exit_code, 0)
+
+    def test_cmd_studentapp_test(self):
+        with patch("src.cli.StudentAppClient.test_connection", return_value=(True, "Connected")), \
+             patch("builtins.print"):
+            exit_code = main(["studentapp", "--test"])
+            self.assertEqual(exit_code, 0)
+
+    def test_cmd_studentapp_login(self):
+        with patch("src.cli.StudentAppClient.login", return_value=(True, "Success")), \
+             patch("src.cli.AppConfig.load") as mock_load, \
+             patch("builtins.print"):
+            mock_cfg = MagicMock()
+            mock_cfg.studentapp.email = "student@ugent.be"
+            mock_cfg.studentapp.password = "secret"
+            mock_cfg.studentapp.token_file = ".studentapp_tokens.json"
+            mock_load.return_value = mock_cfg
+
+            exit_code = main(["studentapp", "--login"])
+            self.assertEqual(exit_code, 0)
+
+    def test_cmd_studentapp_auth(self):
+        with patch("src.cli.StudentAppClient.login", return_value=(True, "Success")), \
+             patch("src.cli.AppConfig.load") as mock_load, \
+             patch("builtins.print"):
+            mock_cfg = MagicMock()
+            mock_cfg.studentapp.email = "student@ugent.be"
+            mock_cfg.studentapp.password = "secret"
+            mock_cfg.studentapp.token_file = ".studentapp_tokens.json"
+            mock_load.return_value = mock_cfg
+
+            exit_code = main(["studentapp-auth"])
+            self.assertEqual(exit_code, 0)

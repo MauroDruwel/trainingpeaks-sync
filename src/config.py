@@ -65,16 +65,22 @@ class LagoConfig:
 class StudentAppConfig:
     """Configuration for StudentApp pool reservation checking."""
     enabled: bool = False
+    email: Optional[str] = None
+    password: Optional[str] = None
+    login_url: Optional[str] = None
+    token_file: str = ".studentapp_tokens.json"
     har_path: Optional[Path] = None
     api_url: Optional[str] = None
     api_token: Optional[str] = None
 
     @property
     def is_configured(self) -> bool:
-        """Check if HAR file or API credentials are provided."""
+        """Check if email/password, tokens, HAR file, or API credentials are provided."""
         return bool(
-            (self.har_path and self.har_path.exists())
+            (self.email and self.password)
+            or (self.har_path and self.har_path.exists())
             or (self.api_url and self.api_token)
+            or Path(self.token_file).exists()
         )
 
 
@@ -251,6 +257,10 @@ class AppConfig:
         )
 
         # 3. StudentApp
+        student_email = os.getenv("STUDENTAPP_EMAIL")
+        student_password = os.getenv("STUDENTAPP_PASSWORD")
+        student_login_url = os.getenv("STUDENTAPP_LOGIN_URL")
+        student_token_file = os.getenv("STUDENTAPP_TOKEN_FILE", ".studentapp_tokens.json")
         har_path_str = os.getenv("STUDENTAPP_HAR_PATH")
         har_path = Path(har_path_str) if har_path_str else None
         student_url = os.getenv("STUDENTAPP_API_URL")
@@ -260,11 +270,20 @@ class AppConfig:
         student_enabled = (
             student_enabled_env.lower() in ("true", "1", "yes")
             if student_enabled_env is not None
-            else bool(har_path or (student_url and student_token))
+            else bool(
+                (student_email and student_password)
+                or har_path
+                or (student_url and student_token)
+                or Path(student_token_file).exists()
+            )
         )
 
         studentapp = StudentAppConfig(
             enabled=student_enabled,
+            email=student_email,
+            password=student_password,
+            login_url=student_login_url,
+            token_file=student_token_file,
             har_path=har_path,
             api_url=student_url,
             api_token=student_token,

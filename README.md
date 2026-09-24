@@ -2,7 +2,7 @@
 
 [![Mauro Quality Gate](https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-2ea44f?style=flat&logo=github)](https://github.com/MauroDruwel/quality-gate)
 [![CI](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/MauroDruwel/trainingpeaks-sync/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-192%20passed-brightgreen.svg)](#-running-tests)
+[![Tests](https://img.shields.io/badge/tests-204%20passed-brightgreen.svg)](#-running-tests)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/github/license/MauroDruwel/trainingpeaks-sync)](LICENSE)
 
@@ -22,7 +22,7 @@ When heading out for a swim, your session is captured across three distinct chan
                                   │
 ┌─────────────────────────────┐   │   ┌─────────────────────────────┐
 │ 2. LAGO Swimming Email      │   │   │ 3. StudentApp Pool Booking  │
-│    swimming@maurodruwel.be  ├───┼───┤    .har Export or Live API  │
+│    swimming@maurodruwel.be  ├───┼───┤    Headless Login / API     │
 │    (sports@ IMAP Account)   │   │   │    Facility & Time Slot     │
 └─────────────────────────────┘   │   └─────────────────────────────┘
                                   ▼
@@ -44,7 +44,7 @@ When heading out for a swim, your session is captured across three distinct chan
 
 1. **Watch Telemetry (Strava)**: Captures split times, distance, stroke cadence, heart rate, and indoor pool laps.
 2. **LAGO Swimming Reservation**: Scans confirmation emails & PDF e-tickets (`Reserveringsbewijs.pdf` / `E-tickets.pdf`) sent to `swimming@maurodruwel.be` via IMAP to verify facility (e.g. LAGO Kortrijk Weide, Rozebroeken) and booked time slot.
-3. **StudentApp Pool Booking**: Parses `.har` network exports or connects to the student sports API to verify campus pool reservations (e.g. GUSB Gent).
+3. **StudentApp Pool Booking**: Connects directly via headless email/password login (with session caching in `.studentapp_tokens.json`) or parses offline `.har` network exports to verify campus pool reservations (e.g. GUSB Gent).
 
 ---
 
@@ -57,7 +57,7 @@ When heading out for a swim, your session is captured across three distinct chan
 - ⏱️ **Headless & Cron-Ready**: Designed for unattended background automation via standard `crontab`, `systemd`, or built-in `--daemon` loop.
 - 🧠 **NVIDIA NIM AI Coaching + NIMStats**: Connects to the NVIDIA NIM API (`https://integrate.api.nvidia.com/v1`) and dynamically retrieves the highest-performing LLM from **[NIMStats](https://nimstats.maurodruwel.be/)** based on benchmarked intelligence, uptime, and throughput. Also supports local models (Ollama, LM Studio) and cloud endpoints (OpenRouter, Groq, DeepSeek).
 - 💾 **Idempotent Atomic State**: Persisted safely in `.sync_state.json` to prevent duplicates across runs.
-- 🧪 **192 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, reconciler logic, TCX formatting, Garmin Connect upload, NIMStats retrieval, and CLI handlers.
+- 🧪 **204 Automated Tests**: 100% test pass rate covering IMAP email parsing, HAR extraction, StudentApp headless auth & token caching, reconciler logic, TCX formatting, Garmin Connect upload, NIMStats retrieval, and CLI handlers.
 
 ---
 
@@ -136,9 +136,12 @@ All configuration is managed via environment variables in `.env`:
 | `LAGO_TARGET_EMAIL` | `swimming@maurodruwel.be` | Target address where LAGO reservations are delivered |
 | `LAGO_LOOKBACK_DAYS` | `7` | How many days back to scan for reservation emails |
 | **StudentApp Pool Bookings** | | |
-| `STUDENTAPP_HAR_PATH` | — | Path to `.har` export from StudentApp |
-| `STUDENTAPP_API_URL` | — | Live StudentApp API endpoint (if applicable) |
-| `STUDENTAPP_BEARER_TOKEN` | — | Bearer token for live API requests |
+| `STUDENTAPP_EMAIL` | — | StudentApp account email for headless login |
+| `STUDENTAPP_PASSWORD` | — | StudentApp account password |
+| `STUDENTAPP_TOKEN_FILE` | `.studentapp_tokens.json` | Path to cached StudentApp session tokens |
+| `STUDENTAPP_LOGIN_URL` | — | Custom login endpoint URL (if not using default) |
+| `STUDENTAPP_API_URL` | — | Live StudentApp API endpoint for reservations |
+| `STUDENTAPP_HAR_PATH` | — | Optional path to `.har` export for offline inspection |
 | **Multi-Source Fusion Engine** | | |
 | `SYNTHETIC_WORKOUT_IF_NO_WATCH` | `true` | Generate synthetic TCX if watch was forgotten |
 | `SYNTHETIC_SWIM_DISTANCE_METERS`| `2000` | Default distance for synthetic swim workouts |
@@ -264,7 +267,7 @@ pytest --cov=src --cov-report=term-missing
 
 This project strictly adheres to the **[Mauro Quality Gate (MQG)](https://github.com/MauroDruwel/quality-gate)**:
 - **Zero-Warning Strictness**: Clean linting and formatting via `ruff`.
-- **Automated Testing**: 176 unit and integration tests across data ingestion, TCX generation, NIMStats retrieval, and multi-source reconciliation.
+- **Automated Testing**: 204 unit and integration tests across data ingestion, TCX generation, NIMStats retrieval, and multi-source reconciliation.
 - **Atomic State**: Synchronization state is persisted atomically in `.sync_state.json` to prevent partial writes.
 - **Secret Hygiene**: Sensitive credentials remain strictly inside `.env` (gitignored).
 
