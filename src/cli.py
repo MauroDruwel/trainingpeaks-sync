@@ -3,6 +3,7 @@ Command line interface for TrainingPeaks Multi-Source Sync (Mauro Edition).
 Orchestrates Strava telemetry, LAGO email bookings, and StudentApp pool reservations.
 """
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -228,6 +229,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 def cmd_sync(args: argparse.Namespace, config: AppConfig) -> int:
     """Execute the multi-source sync command."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     if args.output_dir:
         config.sync.output_dir = Path(args.output_dir)
 
